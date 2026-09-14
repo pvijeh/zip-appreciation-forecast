@@ -92,6 +92,21 @@ def _importance_table(importance: pd.DataFrame, n: int = 15) -> str:
     return "\n".join(lines)
 
 
+PER_HORIZON_FILES = (
+    "evaluation_{h}y_by_year.csv",
+    "factor_history_{h}y.csv",
+    "feature_importance_{h}y.csv",
+    "nyc_ranking_{h}y.csv",
+)
+
+
+def _remove_stale_horizon_files(horizons: set[int]) -> None:
+    """Drop per-horizon files from earlier runs so output/ describes one evaluation."""
+    for h in set(config.HORIZONS) - horizons:
+        for pattern in PER_HORIZON_FILES:
+            (config.OUTPUT_DIR / pattern.format(h=h)).unlink(missing_ok=True)
+
+
 def write_report(
     results: dict[int, pd.DataFrame],
     summary: pd.DataFrame,
@@ -101,6 +116,7 @@ def write_report(
     panel: pd.DataFrame,
 ) -> None:
     config.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    _remove_stale_horizon_files(set(results))
     summary.to_csv(config.OUTPUT_DIR / "evaluation_summary.csv", index=False)
     for h, r in results.items():
         r.to_csv(config.OUTPUT_DIR / f"evaluation_{h}y_by_year.csv", index=False)

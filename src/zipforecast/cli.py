@@ -76,6 +76,7 @@ def main() -> None:
             "--horizons",
             type=int,
             nargs="+",
+            choices=config.HORIZONS,
             default=list(config.HORIZONS),
             help="forecast horizons in years (default: %(default)s)",
         )

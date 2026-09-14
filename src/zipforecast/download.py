@@ -4,6 +4,7 @@ import io
 import logging
 import os
 import zipfile
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 import httpx
@@ -23,8 +24,32 @@ def census_api_key() -> str:
     return key.strip().rstrip(".,;")
 
 
-def _download(url: str, dest: Path, client: httpx.Client) -> None:
-    if dest.exists():
+def _remote_last_modified(url: str, client: httpx.Client) -> float | None:
+    resp = client.head(url, follow_redirects=True, timeout=60)
+    resp.raise_for_status()
+    header = resp.headers.get("last-modified")
+    if header is None:
+        return None
+    return parsedate_to_datetime(header).timestamp()
+
+
+def _is_current(url: str, dest: Path, client: httpx.Client, mutable: bool) -> bool:
+    """Whether the local copy can be reused.
+
+    Immutable inputs (ACS vintages, gazetteer) are current once present. Mutable inputs
+    (Zillow republishes the same URL every month) are current only if the server's
+    Last-Modified matches the mtime stamped on the local file at download time.
+    """
+    if not dest.exists():
+        return False
+    if not mutable:
+        return True
+    remote = _remote_last_modified(url, client)
+    return remote is not None and abs(dest.stat().st_mtime - remote) < 1
+
+
+def _download(url: str, dest: Path, client: httpx.Client, mutable: bool = False) -> None:
+    if _is_current(url, dest, client, mutable):
         log.info("cached %s", dest.name)
         return
     log.info("downloading %s", url)
@@ -34,13 +59,17 @@ def _download(url: str, dest: Path, client: httpx.Client) -> None:
         with open(tmp, "wb") as f:
             for chunk in resp.iter_bytes(1 << 20):
                 f.write(chunk)
-        tmp.rename(dest)
+        header = resp.headers.get("last-modified")
+    if header is not None:
+        stamp = parsedate_to_datetime(header).timestamp()
+        os.utime(tmp, (stamp, stamp))
+    tmp.replace(dest)
 
 
 def download_zillow(client: httpx.Client) -> None:
     config.RAW_DIR.mkdir(parents=True, exist_ok=True)
-    _download(config.ZHVI_URL, config.ZHVI_FILE, client)
-    _download(config.ZORI_URL, config.ZORI_FILE, client)
+    _download(config.ZHVI_URL, config.ZHVI_FILE, client, mutable=True)
+    _download(config.ZORI_URL, config.ZORI_FILE, client, mutable=True)
 
 
 def download_gazetteer(client: httpx.Client) -> None:
