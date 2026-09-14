@@ -15,6 +15,8 @@ from zipforecast.model import (
 from zipforecast.panel import build_panel
 from zipforecast.report import write_ranking_json, write_report
 
+log = logging.getLogger(__name__)
+
 
 def _load_panel(horizons: list[int]) -> pd.DataFrame:
     if not config.PANEL_FILE.exists():
@@ -29,10 +31,26 @@ def _load_panel(horizons: list[int]) -> pd.DataFrame:
     return panel
 
 
-def _load_summary() -> pd.DataFrame | None:
-    """The last evaluation's summary, so `rank` keeps the skill metadata in the JSON files."""
+def _load_summary(panel: pd.DataFrame) -> pd.DataFrame | None:
+    """The last evaluation's summary, so `rank` keeps the skill metadata in the JSON files.
+
+    Only if it was computed on this panel: a rebuilt panel has a new latest origin and revised
+    history, and skill measured on the old one must not be attached to the new rankings."""
     path = config.OUTPUT_DIR / "evaluation_summary.csv"
-    return pd.read_csv(path) if path.exists() else None
+    if not path.exists():
+        return None
+    summary = pd.read_csv(path)
+    current = str(panel["origin"].max().date())
+    stored = summary["panel_origin"].iloc[0] if "panel_origin" in summary.columns else None
+    if stored != current:
+        log.warning(
+            "evaluation_summary.csv is from panel origin %s, panel is %s; "
+            "run `zipforecast evaluate` to attach skill metadata to the JSON files",
+            stored,
+            current,
+        )
+        return None
+    return summary
 
 
 def cmd_download(_args) -> None:
@@ -47,6 +65,7 @@ def cmd_evaluate(args) -> None:
     panel = _load_panel(args.horizons)
     results = {h: evaluate(panel, h) for h in args.horizons}
     summary = summarize(pd.concat(results.values(), ignore_index=True))
+    summary["panel_origin"] = str(panel["origin"].max().date())
     pd.set_option("display.width", 200)
     print(summary.to_string(index=False))
     importance = {h: feature_importance(panel, h) for h in args.horizons}
@@ -57,7 +76,7 @@ def cmd_evaluate(args) -> None:
 
 def cmd_rank(args) -> None:
     panel = _load_panel(args.horizons)
-    summary = _load_summary()
+    summary = _load_summary(panel)
     for h in args.horizons:
         ranking = rank_nyc(panel, h)
         config.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

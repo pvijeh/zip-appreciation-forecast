@@ -106,3 +106,17 @@ def test_ranking_json_is_ranked_and_nan_safe(monkeypatch, tmp_path):
     assert [z["rank"] for z in doc["zips"]] == [1, 2]
     assert doc["zips"][1]["historical_growth_vs_metro_pct"] is None
     assert doc["zips"][1]["price_vs_metro_median_pct"] == -10.0
+
+
+def test_rank_drops_summary_from_a_different_panel(monkeypatch, tmp_path, caplog):
+    from zipforecast.cli import _load_summary
+
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path)
+    panel = pd.DataFrame({"origin": pd.to_datetime(["2026-07-31", "2027-07-31"])})
+    assert _load_summary(panel) is None
+    summary = pd.DataFrame({"horizon": [1], "model": ["gbm_national"], "panel_origin": ""})
+    summary.assign(panel_origin="2026-07-31").to_csv(tmp_path / "evaluation_summary.csv")
+    assert _load_summary(panel) is None
+    assert "2026-07-31" in caplog.text and "2027-07-31" in caplog.text
+    summary.assign(panel_origin="2027-07-31").to_csv(tmp_path / "evaluation_summary.csv")
+    assert len(_load_summary(panel)) == 1
