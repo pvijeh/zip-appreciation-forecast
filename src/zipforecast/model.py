@@ -45,6 +45,8 @@ BASELINES = {
     "catch_up_price": lambda df: -df["log_price_rel_metro"],
     # Cheaper-than-neighbors ZIPs catch up.
     "catch_up_neighbors": lambda df: -df["nbr_log_price_gap"],
+    # High-beta ZIPs amplify whatever their metro did last year.
+    "beta_x_metro_trend": lambda df: df["beta_10y"] * df["metro_mom_1y"],
 }
 
 
@@ -90,12 +92,24 @@ def _quintile_spread(pred: pd.Series, actual: pd.Series) -> float:
     return float(a[p >= hi].mean() - a[p <= lo].mean())
 
 
+def _within_county_spearman(pred: pd.Series, test: pd.DataFrame, target: str) -> float:
+    """Mean Spearman inside each county, so borough-versus-suburb spread cannot help."""
+    vals = [
+        _spearman(pred[g.index], g[target])
+        for _, g in test.groupby(test["county"].fillna(""))
+        if len(g) >= 20
+    ]
+    vals = [v for v in vals if not np.isnan(v)]
+    return float(np.mean(vals)) if vals else np.nan
+
+
 def _score(name: str, pred: pd.Series, test: pd.DataFrame, target: str) -> dict:
     nyc = test["is_nyc"]
     return {
         "model": name,
         "spearman_national": _spearman(pred, test[target]),
         "spearman_nyc": _spearman(pred[nyc], test.loc[nyc, target]),
+        "spearman_nyc_within_county": _within_county_spearman(pred[nyc], test[nyc], target),
         "q5_q1_spread_national": _quintile_spread(pred, test[target]),
         "q5_q1_spread_nyc": _quintile_spread(pred[nyc], test.loc[nyc, target]),
         "n_test": int(test[target].notna().sum()),
@@ -116,10 +130,16 @@ def _recency_weights(train: pd.DataFrame) -> np.ndarray:
 
 
 def _fit_predict(
-    model, train: pd.DataFrame, test: pd.DataFrame, features, horizon: int, recency: bool = False
+    model,
+    train: pd.DataFrame,
+    test: pd.DataFrame,
+    features,
+    horizon: int,
+    recency: bool = False,
+    fit_target: str | None = None,
 ):
     """Fit on the within-metro percentile target; predictions are expected percentiles."""
-    fit_target = f"target_{horizon}y_pct"
+    fit_target = fit_target or f"target_{horizon}y_pct"
     train = train[train[fit_target].notna()]
     features = _usable_features(train, features)
     kwargs = {"sample_weight": _recency_weights(train)} if recency else {}
@@ -148,6 +168,14 @@ def evaluate(panel: pd.DataFrame, horizon: int) -> pd.DataFrame:
                 make_gbm(), fold.train, test, features, horizon, recency=True
             ),
             "ridge_national": _fit_predict(make_ridge(), fold.train, test, features, horizon),
+            "gbm_county_target": _fit_predict(
+                make_gbm(),
+                fold.train,
+                test,
+                features,
+                horizon,
+                fit_target=f"target_{horizon}y_county_pct",
+            ),
         }
         nyc_train = fold.train[fold.train["is_nyc"]]
         if nyc_train[target].notna().sum() >= 500:
@@ -161,19 +189,57 @@ def evaluate(panel: pd.DataFrame, horizon: int) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def block_bootstrap_ci(
+    values: pd.Series, block: int, draws: int = config.BOOTSTRAP_DRAWS, level: float = 0.90
+) -> tuple[float, float]:
+    """Confidence interval for the mean of a short series of per-origin scores.
+
+    Origins are resampled in circular blocks of `block` consecutive years, because forward
+    windows of that length overlap and the per-origin scores are not independent. With 7-16
+    origins this is a rough interval, not a precise one; with fewer than two blocks (seven
+    10-year origins) there is nothing to resample and no interval is returned."""
+    v = values.dropna().to_numpy()
+    n = len(v)
+    if n < 3 or block > n // 2:
+        return (np.nan, np.nan)
+    block = max(1, block)
+    rng = np.random.default_rng(RANDOM_STATE)
+    n_blocks = int(np.ceil(n / block))
+    starts = rng.integers(0, n, size=(draws, n_blocks))
+    idx = (starts[:, :, None] + np.arange(block)) % n
+    means = v[idx.reshape(draws, -1)[:, :n]].mean(axis=1)
+    lo, hi = np.quantile(means, [(1 - level) / 2, 1 - (1 - level) / 2])
+    return (float(lo), float(hi))
+
+
 def summarize(results: pd.DataFrame) -> pd.DataFrame:
-    metrics = ["spearman_national", "spearman_nyc", "q5_q1_spread_national", "q5_q1_spread_nyc"]
+    metrics = [
+        "spearman_national",
+        "spearman_nyc",
+        "spearman_nyc_within_county",
+        "q5_q1_spread_national",
+        "q5_q1_spread_nyc",
+    ]
+    metrics = [m for m in metrics if m in results.columns]
     grouped = results.groupby(["horizon", "model"])
     summary = grouped[metrics].mean()
     summary.columns = [f"{c}_mean" for c in metrics]
     for m in metrics:
         summary[f"{m}_min"] = grouped[m].min()
     summary["n_folds"] = grouped.size()
-    # Per horizon: the baseline with the best mean NYC Spearman, and how often the national
-    # gradient boosting model beats it fold by fold.
+    ci = grouped["spearman_nyc"].apply(
+        lambda s: pd.Series(block_bootstrap_ci(s, block=int(s.name[0])), index=["lo", "hi"])
+    )
+    summary["spearman_nyc_ci_low"] = ci.xs("lo", level=2)
+    summary["spearman_nyc_ci_high"] = ci.xs("hi", level=2)
+    # Per horizon: the baseline with the best mean NYC Spearman, how often the national
+    # gradient boosting model beats it fold by fold, and a bootstrap interval for the gap.
     summary["best_baseline"] = None
     summary["folds_gbm_beats_best_baseline"] = np.nan
     summary["folds_compared"] = np.nan
+    summary["gap_vs_best_baseline"] = np.nan
+    summary["gap_ci_low"] = np.nan
+    summary["gap_ci_high"] = np.nan
     for h in summary.index.get_level_values("horizon").unique():
         baselines = summary.loc[h].loc[lambda s: s.index.isin(BASELINES), "spearman_nyc_mean"]
         if baselines.empty or (h, "gbm_national") not in summary.index:
@@ -181,16 +247,19 @@ def summarize(results: pd.DataFrame) -> pd.DataFrame:
         best = baselines.idxmax()
         by_year = (
             results[results.horizon == h]
-            .pivot(index="test_year", columns="model", values="spearman_nyc")[
-                ["gbm_national", best]
-            ]
+            .pivot(index="test_year", columns="model", values="spearman_nyc")
+            .reindex(columns=["gbm_national", best])
             .dropna()
         )
-        summary.loc[(h, "gbm_national"), "best_baseline"] = best
-        summary.loc[(h, "gbm_national"), "folds_gbm_beats_best_baseline"] = int(
-            (by_year["gbm_national"] > by_year[best]).sum()
-        )
-        summary.loc[(h, "gbm_national"), "folds_compared"] = len(by_year)
+        gap = by_year["gbm_national"] - by_year[best]
+        lo, hi = block_bootstrap_ci(gap, block=int(h))
+        row = (h, "gbm_national")
+        summary.loc[row, "best_baseline"] = best
+        summary.loc[row, "folds_gbm_beats_best_baseline"] = int((gap > 0).sum())
+        summary.loc[row, "folds_compared"] = len(by_year)
+        summary.loc[row, "gap_vs_best_baseline"] = gap.mean() if len(gap) else np.nan
+        summary.loc[row, "gap_ci_low"] = lo
+        summary.loc[row, "gap_ci_high"] = hi
     return summary.reset_index()
 
 
@@ -204,6 +273,10 @@ FACTOR_HISTORY_FEATURES = [
     "mom_1y",
     "mom_5y",
     "unemployment_rate",
+    "beta_10y",
+    "log_price_rel_county",
+    "inventory_yoy",
+    "price_cut_share",
 ]
 
 
@@ -218,9 +291,75 @@ def factor_history(panel: pd.DataFrame, horizon: int) -> pd.DataFrame:
     for year, g in usable.groupby("origin_year"):
         row = {"origin_year": int(year), "n": len(g)}
         for c in FACTOR_HISTORY_FEATURES:
+            if f"cs_{c}" not in g.columns:
+                continue
             row[c] = _spearman(g[f"cs_{c}"], g[target])
             row[f"{c}_nyc"] = _spearman(g.loc[g["is_nyc"], f"cs_{c}"], g.loc[g["is_nyc"], target])
         rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def beta_history(panel: pd.DataFrame, horizon: int = 1) -> pd.DataFrame:
+    """Does a ZIP's trailing beta to its metro predict its relative growth, and does the
+    sign depend on whether the metro then rose or fell?
+
+    One row per origin. `metro_growth` is the metro's realized forward growth; rows are
+    split by its sign, so the up and down columns pool ZIPs whose own metro went that way.
+    """
+    target = f"target_{horizon}y"
+    usable = panel[panel["metro_ok"] & panel[target].notna() & panel["beta_10y"].notna()]
+    metro_growth = usable[f"fwd_{horizon}y"] - usable[target]
+    rows = []
+    for year, g in usable.groupby("origin_year"):
+        mg = metro_growth.loc[g.index]
+        up, down = g[mg > 0], g[mg < 0]
+        nyc = g[g["is_nyc"]]
+        rows.append(
+            {
+                "origin_year": int(year),
+                "n": len(g),
+                "beta_spearman_all": _spearman(g["beta_10y"], g[target]),
+                "beta_spearman_up_metros": _spearman(up["beta_10y"], up[target]),
+                "beta_spearman_down_metros": _spearman(down["beta_10y"], down[target]),
+                "share_zips_in_up_metros": float((mg > 0).mean()),
+                "nyc_metro_growth": float(mg[g["is_nyc"]].mean()) if len(nyc) else np.nan,
+                "beta_spearman_nyc": _spearman(nyc["beta_10y"], nyc[target]),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+FEATURE_GROUPS = {
+    "listing_tempo": lambda f: any(
+        k in f for k in ("inventory", "new_listings", "days_pending", "price_cut", "inv_per")
+    ),
+    "county": lambda f: "county" in f,
+    "beta": lambda f: "beta" in f,
+    "regime": lambda f: f.startswith("rg_"),
+}
+
+
+def feature_group_ablation(panel: pd.DataFrame, horizon: int) -> pd.DataFrame:
+    """NYC Spearman of the national gradient boosting model per test origin, with all features
+    and with one feature group removed at a time, plus with every group in FEATURE_GROUPS
+    removed. What a group adds is the difference to the `full` column, on held-out origins."""
+    features = model_features(panel)
+    target = f"target_{horizon}y"
+    drops = {"full": []}
+    for name, member in FEATURE_GROUPS.items():
+        drops[f"without_{name}"] = [f for f in features if member(f)]
+    drops["without_all_groups"] = sorted(set(sum(drops.values(), [])))
+    rows = []
+    for fold in walk_forward_folds(panel, horizon):
+        test = fold.test
+        nyc = test["is_nyc"]
+        row = {"test_year": fold.test_year}
+        for name, drop in drops.items():
+            keep = [f for f in features if f not in drop]
+            pred = _fit_predict(make_gbm(), fold.train, test, keep, horizon)
+            row[name] = _spearman(pred[nyc], test.loc[nyc, target])
+        rows.append(row)
+        log.info("h=%d ablation, test origin %d done", horizon, fold.test_year)
     return pd.DataFrame(rows)
 
 

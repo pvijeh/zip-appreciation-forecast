@@ -6,8 +6,10 @@ import pandas as pd
 from zipforecast import config
 from zipforecast.download import download_all
 from zipforecast.model import (
+    beta_history,
     evaluate,
     factor_history,
+    feature_group_ablation,
     feature_importance,
     rank_nyc,
     summarize,
@@ -71,7 +73,9 @@ def cmd_evaluate(args) -> None:
     importance = {h: feature_importance(panel, h) for h in args.horizons}
     factors = {h: factor_history(panel, h) for h in args.horizons}
     rankings = {h: rank_nyc(panel, h) for h in args.horizons}
-    write_report(results, summary, importance, factors, rankings, panel)
+    beta = beta_history(panel, 1) if 1 in args.horizons else None
+    ablation = feature_group_ablation(panel, 1) if 1 in args.horizons else None
+    write_report(results, summary, importance, factors, rankings, panel, beta, ablation)
 
 
 def cmd_rank(args) -> None:

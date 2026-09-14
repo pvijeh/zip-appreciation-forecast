@@ -54,6 +54,112 @@ def _demean_by(series: pd.Series, groups: pd.Series) -> pd.Series:
     return series - series.groupby(groups).transform("mean")
 
 
+def _month_end(origin: pd.Timestamp, years: int) -> pd.Timestamp:
+    return origin - pd.DateOffset(years=years) + pd.offsets.MonthEnd(0)
+
+
+def _beta_to_metro(zhvi: pd.DataFrame, origin: pd.Timestamp, metro: pd.Series) -> pd.Series:
+    """Slope of a ZIP's annual log growth on its metro's mean annual log growth, over the
+    BETA_WINDOW_YEARS years ending at the origin. Above 1: the ZIP amplifies its metro's
+    swings in both directions; below 1: it damps them."""
+    cols = []
+    for k in range(config.BETA_WINDOW_YEARS):
+        end, start = _month_end(origin, k), _month_end(origin, k + 1)
+        if end in zhvi.columns and start in zhvi.columns:
+            cols.append(np.log(zhvi[end]) - np.log(zhvi[start]))
+    if len(cols) < config.BETA_MIN_YEARS:
+        return pd.Series(np.nan, index=metro.index)
+    g = pd.concat(cols, axis=1).reindex(metro.index)
+    m = g.groupby(metro).transform("mean")
+    g = g.where(m.notna())
+    m = m.where(g.notna())
+    gc = g.sub(g.mean(axis=1), axis=0)
+    mc = m.sub(m.mean(axis=1), axis=0)
+    beta = (gc * mc).sum(axis=1, min_count=1) / (mc * mc).sum(axis=1, min_count=1)
+    beta[g.notna().sum(axis=1) < config.BETA_MIN_YEARS] = np.nan
+    return beta.replace([np.inf, -np.inf], np.nan)
+
+
+def _load_fred(name: str) -> pd.Series:
+    """One FRED series as a month-end indexed Series (last observation in each month)."""
+    raw = pd.read_csv(config.FRED_FILES[name], na_values=".")
+    raw.columns = ["date", "value"]
+    s = pd.Series(raw["value"].to_numpy(), index=pd.to_datetime(raw["date"])).dropna()
+    return s.groupby(s.index + pd.offsets.MonthEnd(0)).last()
+
+
+def _macro_regime(zhvi: pd.DataFrame, origins: list[pd.Timestamp]) -> pd.DataFrame:
+    """Per-origin national series the model can use to tell which phase of the cycle it is in.
+
+    These are the same for every ZIP at an origin, so they carry no ranking information on
+    their own; they only help through interactions with ZIP-level features."""
+    if not all(p.exists() for p in config.FRED_FILES.values()):
+        log.warning("FRED files missing; regime features left empty")
+        return pd.DataFrame(index=pd.Index(origins, name="origin"))
+    rate = _load_fred("mortgage_rate")
+    cpi = _load_fred("rent_cpi")
+    natl = np.log(zhvi.median(axis=0))
+    price_to_rent = natl - np.log(cpi.reindex(natl.index))
+    window = 12 * config.PRICE_TO_RENT_MEAN_YEARS
+    dev = price_to_rent - price_to_rent.rolling(window, min_periods=36).mean()
+    out = pd.DataFrame(index=pd.Index(origins, name="origin"))
+    out["rg_rate_level"] = rate.reindex(origins).to_numpy()
+    out["rg_rate_change_1y"] = (
+        out["rg_rate_level"] - rate.reindex([_month_end(o, 1) for o in origins]).to_numpy()
+    )
+    out["rg_natl_mom_1y"] = [
+        natl.get(o, np.nan) - natl.get(_month_end(o, 1), np.nan) for o in origins
+    ]
+    out["rg_price_to_rent_dev"] = dev.reindex(origins).to_numpy()
+    return out
+
+
+def _load_tempo() -> dict[str, pd.DataFrame]:
+    out = {}
+    for name, path in config.ZILLOW_TEMPO_FILES.items():
+        if path.exists():
+            out[name] = _load_zillow_wide(path)[1]
+        else:
+            log.warning("%s missing; market-tempo features left empty", path.name)
+    return out
+
+
+TEMPO_COLUMNS = [
+    "inventory_yoy",
+    "new_listings_yoy",
+    "inv_to_new_listings",
+    "days_pending",
+    "days_pending_yoy",
+    "price_cut_share",
+    "price_cut_share_yoy",
+]
+
+
+def _tempo_features(
+    tempo: dict[str, pd.DataFrame], origin: pd.Timestamp, index: pd.Index
+) -> pd.DataFrame:
+    """Zillow listing-market series at the origin: how fast homes sell and how much supply."""
+    f = pd.DataFrame(np.nan, index=index, columns=TEMPO_COLUMNS)
+    prev = _month_end(origin, 1)
+
+    def at(name, when):
+        v = tempo.get(name)
+        if v is None or when not in v.columns:
+            return pd.Series(np.nan, index=index)
+        return v[when].reindex(index)
+
+    inv, inv_prev = at("inventory", origin), at("inventory", prev)
+    new, new_prev = at("new_listings", origin), at("new_listings", prev)
+    f["inventory_yoy"] = np.log(inv.where(inv > 0)) - np.log(inv_prev.where(inv_prev > 0))
+    f["new_listings_yoy"] = np.log(new.where(new > 0)) - np.log(new_prev.where(new_prev > 0))
+    f["inv_to_new_listings"] = inv / new.where(new > 0)
+    f["days_pending"] = at("days_pending", origin)
+    f["days_pending_yoy"] = f["days_pending"] - at("days_pending", prev)
+    f["price_cut_share"] = at("price_cut_share", origin)
+    f["price_cut_share_yoy"] = f["price_cut_share"] - at("price_cut_share", prev)
+    return f.replace([np.inf, -np.inf], np.nan)
+
+
 def _neighbor_features(frame: pd.DataFrame, coords: pd.DataFrame) -> pd.DataFrame:
     """Gap between a ZIP and its k nearest ZIPs (by ZCTA centroid) on price level and momentum."""
     out = pd.DataFrame(index=frame.index)
@@ -144,6 +250,8 @@ def build_panel() -> pd.DataFrame:
 
     origins = _origins(zhvi)
     log.info("origins: %s .. %s (%d)", origins[0].date(), origins[-1].date(), len(origins))
+    tempo = _load_tempo()
+    macro = _macro_regime(zhvi, origins)
 
     frames = []
     for origin in origins:
@@ -165,6 +273,20 @@ def build_panel() -> pd.DataFrame:
         f["metro_mom_5y"] = f.groupby("metro")["mom_5y"].transform("mean")
         f["metro_mom_1y"] = f.groupby("metro")["mom_1y"].transform("mean")
         f["metro_log_n_zips"] = np.log(f.groupby("metro")["log_zhvi"].transform("size"))
+        f["beta_10y"] = _beta_to_metro(zhvi, origin, metro)
+
+        # County within metro: Manhattan and Pike County PA share a metro but little else.
+        county = f["metro"] + "|" + f["county"].fillna("")
+        county_price = f.groupby(county)["log_zhvi"].transform("median")
+        f["log_price_rel_county"] = f["log_zhvi"] - county_price
+        f["county_log_price_rel_metro"] = county_price - f["metro_log_price_median"]
+        f["mom_1y_rel_county"] = _demean_by(f["mom_1y"], county)
+        f["county_mom_1y_rel"] = f.groupby(county)["mom_1y"].transform("mean") - f["metro_mom_1y"]
+        f["county_mom_5y_rel"] = f.groupby(county)["mom_5y"].transform("mean") - f["metro_mom_5y"]
+
+        f = f.join(_tempo_features(tempo, origin, f.index))
+        for col in macro.columns:
+            f[col] = macro.loc[origin, col]
 
         if origin in zori.columns:
             rent_yield = 12 * zori[origin].reindex(f.index) / zhvi[origin].reindex(f.index)
@@ -189,6 +311,11 @@ def build_panel() -> pd.DataFrame:
             f["bachelors_share_rel"] = _demean_by(f["bachelors_share"], metro)
             f["young_adult_share_rel"] = _demean_by(f["young_adult_share"], metro)
             f["acs_rent_to_price"] = f["log_acs_rent"] + np.log(12) - f["log_zhvi"]
+            inv = tempo.get("inventory")
+            if inv is not None and origin in inv.columns:
+                f["inv_per_1k_units"] = (
+                    1000 * inv[origin].reindex(f.index) / np.exp(f["log_housing_units"])
+                )
             prev_vintage = vintage - 5
             if prev_vintage in acs:
                 prev = acs[prev_vintage].reindex(f.index)
@@ -206,10 +333,56 @@ def build_panel() -> pd.DataFrame:
     n_metro = panel.groupby(["origin", "metro"])["zip"].transform("size")
     panel["metro_ok"] = n_metro >= config.MIN_ZIPS_PER_METRO
     panel["is_nyc"] = panel["metro"] == config.NYC_METRO
+    panel = _add_trailing_factor_signs(panel)
     panel = _add_cross_sectional_ranks(panel)
     config.PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     panel.to_parquet(config.PANEL_FILE, index=False)
     log.info("panel: %d rows, %d columns -> %s", len(panel), panel.shape[1], config.PANEL_FILE)
+    return panel
+
+
+def _grouped_spearman(a: pd.Series, b: pd.Series, groups) -> pd.Series:
+    """Spearman of a and b within each group, as a Series indexed by group."""
+    mask = a.notna() & b.notna()
+    ra = a[mask].groupby(groups[mask]).rank()
+    rb = b[mask].groupby(groups[mask]).rank()
+    g = groups[mask]
+    ra = ra - ra.groupby(g).transform("mean")
+    rb = rb - rb.groupby(g).transform("mean")
+    cov = (ra * rb).groupby(g).sum()
+    var = np.sqrt((ra * ra).groupby(g).sum() * (rb * rb).groupby(g).sum())
+    n = mask.groupby(groups).sum()
+    return (cov / var.where(var > 0)).where(n >= 20)
+
+
+TRAILING_FACTORS = {
+    # Did cheaper-than-metro ZIPs beat their metro over the past year?
+    "cheap": lambda p: -p["log_price_rel_metro"],
+    # Did last year's winners keep winning?
+    "mom": lambda p: p["mom_1y_rel"],
+}
+
+
+def _add_trailing_factor_signs(panel: pd.DataFrame) -> pd.DataFrame:
+    """Realized one-year Spearman of the cheap and momentum factors, lagged one origin so
+    it is known at forecast time: nationally, over the last three years, and per metro."""
+    ok = panel["metro_ok"]
+    year = panel["origin_year"]
+    metro_year = panel["metro"] + "|" + year.astype(str)
+    for name, fn in TRAILING_FACTORS.items():
+        factor = fn(panel).where(ok)
+        realized = panel["fwd_1y"].where(ok)
+        national = _grouped_spearman(factor, realized, year)
+        national.index = national.index + 1
+        panel[f"rg_{name}_sign_1y"] = year.map(national)
+        rolling = national.rolling(3, min_periods=2).mean()
+        panel[f"rg_{name}_sign_3y"] = year.map(rolling)
+        by_metro = _grouped_spearman(factor, realized, metro_year)
+        shifted = {}
+        for key, v in by_metro.items():
+            m, y = key.rsplit("|", 1)
+            shifted[f"{m}|{int(y) + 1}"] = v
+        panel[f"rg_metro_{name}_sign_1y"] = metro_year.map(shifted)
     return panel
 
 
@@ -225,13 +398,16 @@ def _add_cross_sectional_ranks(panel: pd.DataFrame) -> pd.DataFrame:
     zip_level = [
         c
         for c in raw_feature_columns(panel)
-        if not c.startswith("metro_") and not c.endswith("_rel")
+        if not c.startswith(("metro_", "rg_")) and not c.endswith("_rel")
     ]
     ranked = groups[zip_level].rank(pct=True)
     ranked.columns = [f"cs_{c}" for c in zip_level]
+    # County-neutral target variant: percentile within (origin, metro, county).
+    county_groups = panel.groupby(["origin", "metro", panel["county"].fillna("")], sort=False)
     targets = {}
     for h in config.HORIZONS:
         targets[f"target_{h}y_pct"] = groups[f"fwd_{h}y"].rank(pct=True)
+        targets[f"target_{h}y_county_pct"] = county_groups[f"fwd_{h}y"].rank(pct=True)
     return pd.concat([panel, ranked, pd.DataFrame(targets)], axis=1)
 
 
@@ -248,5 +424,5 @@ def raw_feature_columns(panel: pd.DataFrame) -> list[str]:
 
 
 def model_features(panel: pd.DataFrame) -> list[str]:
-    """Within-metro percentile features the models are fit on."""
-    return [c for c in panel.columns if c.startswith("cs_")]
+    """Within-metro percentile features plus the raw regime series the models are fit on."""
+    return [c for c in panel.columns if c.startswith(("cs_", "rg_"))]
