@@ -20,7 +20,7 @@ def _load_panel(horizons: list[int]) -> pd.DataFrame:
     if not config.PANEL_FILE.exists():
         raise SystemExit("no panel yet; run `zipforecast panel` first")
     panel = pd.read_parquet(config.PANEL_FILE)
-    missing = [h for h in horizons if f"target_{h}y_pct" not in panel.columns]
+    missing = [h for h in horizons if f"target_{h}y" not in panel.columns]
     if missing:
         raise SystemExit(
             f"panel has no targets for horizons {missing}; it was built by an older version, "
