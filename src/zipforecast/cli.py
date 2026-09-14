@@ -16,10 +16,23 @@ from zipforecast.panel import build_panel
 from zipforecast.report import write_ranking_json, write_report
 
 
-def _load_panel() -> pd.DataFrame:
+def _load_panel(horizons: list[int]) -> pd.DataFrame:
     if not config.PANEL_FILE.exists():
         raise SystemExit("no panel yet; run `zipforecast panel` first")
-    return pd.read_parquet(config.PANEL_FILE)
+    panel = pd.read_parquet(config.PANEL_FILE)
+    missing = [h for h in horizons if f"target_{h}y_pct" not in panel.columns]
+    if missing:
+        raise SystemExit(
+            f"panel has no targets for horizons {missing}; it was built by an older version, "
+            "run `zipforecast panel` to rebuild it"
+        )
+    return panel
+
+
+def _load_summary() -> pd.DataFrame | None:
+    """The last evaluation's summary, so `rank` keeps the skill metadata in the JSON files."""
+    path = config.OUTPUT_DIR / "evaluation_summary.csv"
+    return pd.read_csv(path) if path.exists() else None
 
 
 def cmd_download(_args) -> None:
@@ -31,7 +44,7 @@ def cmd_panel(_args) -> None:
 
 
 def cmd_evaluate(args) -> None:
-    panel = _load_panel()
+    panel = _load_panel(args.horizons)
     results = {h: evaluate(panel, h) for h in args.horizons}
     summary = summarize(pd.concat(results.values(), ignore_index=True))
     pd.set_option("display.width", 200)
@@ -43,12 +56,13 @@ def cmd_evaluate(args) -> None:
 
 
 def cmd_rank(args) -> None:
-    panel = _load_panel()
+    panel = _load_panel(args.horizons)
+    summary = _load_summary()
     for h in args.horizons:
         ranking = rank_nyc(panel, h)
         config.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         ranking.to_csv(config.OUTPUT_DIR / f"nyc_ranking_{h}y.csv", index=False)
-        write_ranking_json(ranking, h)
+        write_ranking_json(ranking, h, summary)
         print(ranking.head(25).to_string(index=False))
 
 

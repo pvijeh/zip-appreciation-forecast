@@ -55,11 +55,11 @@ def _beats_baseline_line(summary: pd.DataFrame, horizon: int) -> str:
     if s.empty or pd.isna(s["best_baseline"].iloc[0]):
         return ""
     r = s.iloc[0]
-    wins = round(r.share_folds_gbm_beats_best_baseline * r.n_folds)
     label = MODEL_LABELS[r.best_baseline].removeprefix("Baseline: ")
     return (
         f"Best baseline at this horizon: {label}. The national gradient boosting model beat it "
-        f"on NYC ZIPs in {wins} of {int(r.n_folds)} test origins."
+        f"on NYC ZIPs in {int(r.folds_gbm_beats_best_baseline)} of {int(r.folds_compared)} "
+        "test origins where both were scored."
     )
 
 

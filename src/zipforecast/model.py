@@ -172,7 +172,8 @@ def summarize(results: pd.DataFrame) -> pd.DataFrame:
     # Per horizon: the baseline with the best mean NYC Spearman, and how often the national
     # gradient boosting model beats it fold by fold.
     summary["best_baseline"] = None
-    summary["share_folds_gbm_beats_best_baseline"] = np.nan
+    summary["folds_gbm_beats_best_baseline"] = np.nan
+    summary["folds_compared"] = np.nan
     for h in summary.index.get_level_values("horizon").unique():
         baselines = summary.loc[h].loc[lambda s: s.index.isin(BASELINES), "spearman_nyc_mean"]
         if baselines.empty or (h, "gbm_national") not in summary.index:
@@ -186,9 +187,10 @@ def summarize(results: pd.DataFrame) -> pd.DataFrame:
             .dropna()
         )
         summary.loc[(h, "gbm_national"), "best_baseline"] = best
-        summary.loc[(h, "gbm_national"), "share_folds_gbm_beats_best_baseline"] = (
-            (by_year["gbm_national"] > by_year[best]).mean() if len(by_year) else np.nan
+        summary.loc[(h, "gbm_national"), "folds_gbm_beats_best_baseline"] = int(
+            (by_year["gbm_national"] > by_year[best]).sum()
         )
+        summary.loc[(h, "gbm_national"), "folds_compared"] = len(by_year)
     return summary.reset_index()
 
 

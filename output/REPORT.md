@@ -19,7 +19,7 @@ The target is a ZIP's log price growth over the horizon minus the average of its
 | Baseline: cheaper than the metro median catches up | +0.058 | +0.126 | +0.010 | -0.541 | 16 |
 | Baseline: cheaper than the 10 nearest ZIPs catches up | +0.069 | +0.111 | +0.007 | -0.322 | 16 |
 
-Best baseline at this horizon: last year's relative growth continues. The national gradient boosting model beat it on NYC ZIPs in 8 of 16 test origins.
+Best baseline at this horizon: last year's relative growth continues. The national gradient boosting model beat it on NYC ZIPs in 8 of 16 test origins where both were scored.
 
 ### NYC Spearman by test origin
 
@@ -175,7 +175,7 @@ Comparison with Zillow's own published 12-month forecast (ZHVF) for the same ZIP
 | Baseline: cheaper than the metro median catches up | +0.126 | +0.188 | +0.032 | -0.492 | 15 |
 | Baseline: cheaper than the 10 nearest ZIPs catches up | +0.109 | +0.162 | +0.021 | -0.231 | 15 |
 
-Best baseline at this horizon: last year's relative growth continues. The national gradient boosting model beat it on NYC ZIPs in 6 of 15 test origins.
+Best baseline at this horizon: last year's relative growth continues. The national gradient boosting model beat it on NYC ZIPs in 6 of 15 test origins where both were scored.
 
 ### NYC Spearman by test origin
 
@@ -328,7 +328,7 @@ Comparison with Zillow's own published 12-month forecast (ZHVF) for the same ZIP
 | Baseline: cheaper than the metro median catches up | +0.188 | +0.246 | +0.063 | -0.483 | 14 |
 | Baseline: cheaper than the 10 nearest ZIPs catches up | +0.143 | +0.208 | +0.039 | -0.170 | 14 |
 
-Best baseline at this horizon: last year's relative growth continues. The national gradient boosting model beat it on NYC ZIPs in 4 of 14 test origins.
+Best baseline at this horizon: last year's relative growth continues. The national gradient boosting model beat it on NYC ZIPs in 4 of 14 test origins where both were scored.
 
 ### NYC Spearman by test origin
 
@@ -478,7 +478,7 @@ Comparison with Zillow's own published 12-month forecast (ZHVF) for the same ZIP
 | Baseline: cheaper than the metro median catches up | +0.293 | +0.345 | +0.141 | -0.453 | 12 |
 | Baseline: cheaper than the 10 nearest ZIPs catches up | +0.199 | +0.283 | +0.084 | -0.114 | 12 |
 
-Best baseline at this horizon: cheaper than the metro median catches up. The national gradient boosting model beat it on NYC ZIPs in 2 of 12 test origins.
+Best baseline at this horizon: cheaper than the metro median catches up. The national gradient boosting model beat it on NYC ZIPs in 2 of 12 test origins where both were scored.
 
 ### NYC Spearman by test origin
 
@@ -622,7 +622,7 @@ Comparison with Zillow's own published 12-month forecast (ZHVF) for the same ZIP
 | Baseline: cheaper than the metro median catches up | +0.538 | +0.548 | +0.307 | +0.144 | 7 |
 | Baseline: cheaper than the 10 nearest ZIPs catches up | +0.374 | +0.444 | +0.202 | +0.291 | 7 |
 
-Best baseline at this horizon: cheaper than the metro median catches up. The national gradient boosting model beat it on NYC ZIPs in 0 of 7 test origins.
+Best baseline at this horizon: cheaper than the metro median catches up. The national gradient boosting model beat it on NYC ZIPs in 0 of 7 test origins where both were scored.
 
 ### NYC Spearman by test origin
 
