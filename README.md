@@ -4,6 +4,8 @@ Ranks the 831 ZIP codes in the New York metro by how much their home values are 
 gain, relative to the metro, over the next 1, 2, 3, 5 and 10 years. Trained on 21,556 ZIPs
 across all US metros using Zillow home values, rents and listing counts, Census ACS demographics
 and two FRED series. All data is public; the only credential is a free Census API key.
+[RESULTS.md](RESULTS.md) is the one-page version: the score, and the 15 best and 15 worst
+ranked ZIPs for the next 12 months.
 
 ## What the walk-forward test found
 
