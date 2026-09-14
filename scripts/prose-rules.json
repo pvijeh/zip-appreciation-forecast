@@ -1,0 +1,176 @@
+{
+  "comment": "Phrases to avoid in reader-facing prose (content/*.ts). Each rule has a regex, a reason, and a plain-English replacement to reach for. Sourced from Hacker News feedback on the saas-scanner writeup plus the usual LLM tells. Add to this list rather than arguing with it in review.",
+  "banned": [
+    {
+      "re": "\\b(sales|marketing|GTM|go-to-market|no-call)\\s+motion\\b",
+      "why": "consulting jargon; a reader outside B2B SaaS has to guess",
+      "instead": "say the concrete activity: \"calls and demos\", \"cold outreach\", \"selling by phone\""
+    },
+    {
+      "re": "\\bthe\\s+(perfect|right|wrong|exact)\\s+shape\\b",
+      "why": "shape metaphor with no referent",
+      "instead": "name the properties: \"published its price, self-serve signup, under $200/mo\""
+    },
+    {
+      "re": "\\b[a-z]+-shaped\\b",
+      "why": "coined compound adjective the reader has to decode",
+      "instead": "describe the thing plainly"
+    },
+    {
+      "re": "\\bthe\\s+(opaque|silent|invisible|quiet|fat|thin)\\s+(majority|minority|middle|tail|layer|cohort)\\b",
+      "why": "abstract noun phrase standing in for a number",
+      "instead": "give the count: \"the 433 companies with no published price\""
+    },
+    {
+      "re": "\\bthe\\s+long\\s+tail\\b",
+      "why": "borrowed term; fine once if the sentence around it is concrete",
+      "instead": "name what is in the tail",
+      "severity": "warn"
+    },
+    {
+      "re": "\\bshelf[- ]ranked\\b|\\bshelf\\s+ranked\\s+by\\b",
+      "why": "metaphor doing load-bearing work",
+      "instead": "\"a list ordered by installs and reviews\""
+    },
+    {
+      "re": "\\bcard-swipe\\s+range\\b",
+      "why": "coinage; the number is clearer than the label",
+      "instead": "\"cheap enough to put on a credit card ($15-200/mo)\""
+    },
+    {
+      "re": "\\bpull\\s+channel\\b|\\bdistribution\\s+surface\\b|\\bwedges?\\b",
+      "why": "startup jargon",
+      "instead": "say where the customers actually come from"
+    },
+    {
+      "re": "\\bCTAs?\\b",
+      "caseSensitive": true,
+      "why": "startup jargon; the reader sees a button, not an acronym",
+      "instead": "\"the \\\"book a demo\\\" button\", or name the link"
+    },
+    {
+      "re": "\\bmoats?\\b",
+      "why": "VC shorthand; fine in a pitch deck, opaque in an essay",
+      "instead": "\"what actually stops a competitor\", or name it: \"switching costs\""
+    },
+    {
+      "re": "\\bleverage(d|s|ing)?\\b",
+      "why": "verb-as-jargon",
+      "instead": "\"use\""
+    },
+    {
+      "re": "\\b(delve|delves|delving)\\b",
+      "why": "LLM tell",
+      "instead": "\"look at\""
+    },
+    {
+      "re": "\\b(landscape|realm|tapestry|ecosystem of|paradigm|synergy|synergies)\\b",
+      "why": "LLM tell / filler abstraction",
+      "instead": "name the actual thing"
+    },
+    {
+      "re": "\\bunderscor(es|ing)\\s+(the|how|that|why|a|an|its|our|their)\\b|\\b(highlights the importance|testament to|speaks volumes)\\b",
+      "why": "LLM tell",
+      "instead": "state the point directly"
+    },
+    {
+      "re": "\\b(seamless|seamlessly|robust|holistic|comprehensive|cutting-edge|state-of-the-art|game-?changer|revolutionize[sd]?|elevate[sd]?|harness(es|ed|ing)?\\s+(the|its|our|their)|showcase[sd]?|foster(s|ed|ing)?|streamline[sd]?|unlock(s|ed|ing)?\\s+value)\\b",
+      "why": "marketing filler",
+      "instead": "delete, or give the specific benefit"
+    },
+    {
+      "re": "\\b(furthermore|moreover|additionally,|in conclusion|it('|’)s worth noting|it is important to note|at the end of the day|that being said)\\b",
+      "why": "LLM connective tissue",
+      "instead": "delete; start the sentence with its content"
+    },
+    {
+      "re": "\\bnot\\s+(only|just)\\b[^.]{0,60}\\bbut\\s+also\\b",
+      "why": "LLM sentence template",
+      "instead": "two plain sentences"
+    },
+    {
+      "re": "\\bin\\s+today('|’)s\\s+\\w+",
+      "why": "LLM opener",
+      "instead": "delete"
+    },
+    {
+      "re": "\\b(crucial|pivotal|meticulous(ly)?|myriad|plethora|nuanced)\\b",
+      "why": "LLM vocabulary",
+      "instead": "\"important\", \"careful\", \"many\" — or delete"
+    },
+    {
+      "re": "\\bdeep\\s+dive\\b|\\bdouble\\s+down\\b|\\bmove\\s+the\\s+needle\\b|\\bfirst\\s+principles\\b",
+      "why": "business cliche",
+      "instead": "say what you did"
+    },
+    {
+      "re": "\\bsurfaced?\\s+(a|an|the|two|three)\\b",
+      "why": "\"surface\" as a verb reads like a product spec",
+      "instead": "\"turned up\", \"found\""
+    },
+    {
+      "re": "\\b(a|an|the|one|some)\\s+(frontier|general(-purpose)?|mid-tier|major|leading|popular|well-known|commodity|stronger|large|big)\\s+(cloud\\s+)?(LLM|model|GPU|library|vendor|provider|framework|zero-shot\\s+\\w+\\s+model)\\b",
+      "why": "anonymised noun; the reader is told a thing exists but not what it is",
+      "instead": "name it: \"Gemini 3.1 Pro\", \"a Tesla T4\", \"GLiNER large v2.5\""
+    },
+    {
+      "re": "\\bAcme\\b|\\bin a (\\w+[- ])?niche\\b|\\ba (consumer|hobbyist|specialist)[- ]\\w+ niche\\b|\\bthe site (the|this) \\w+ feeds\\b",
+      "why": "the domain has been scrubbed out; a write-up that will not say what it is about reads as evasive",
+      "instead": "say the real thing: \"knife brands on r/chefknives\", \"Benchmade 940\", \"New Knife Day\""
+    },
+    {
+      "re": "\\b[Aa] (site|product|company|tool|app|project|service|business) (I|we) (run|own|built|work (on|with))\\b|(^|[.!?]\\s+)The site('s\\b| (?!is\\b|this\\b|that\\b))",
+      "caseSensitive": true,
+      "why": "a name was deleted and a placeholder put in its slot; the sentence still has the shape of the sentence that named it",
+      "instead": "rewrite the sentence so it does not need the name at all, or name the thing"
+    },
+    {
+      "re": "\\b(the honest (fix|answer|version|take|number)|genuinely|the (actual|real) (product|lesson|point|problem|work|cost)|the (lesson|thing) I actually|actually (took|matters|moved)|the thing that (moved|made|mattered))\\b",
+      "why": "staged candour: a model announcing that it is about to be frank",
+      "instead": "state the fact without the drumroll"
+    },
+    {
+      "re": "\\b(nobody (warns|tells) you( about)?|the bug that ate|worth writing down|what generalizes|what to copy|key takeaways|lessons learned)\\b",
+      "why": "headline template; every AI write-up has one of these headings",
+      "instead": "a plain heading that says what the section contains: \"Tokenizing spans\", \"Runs 1 to 5 failed\""
+    },
+    {
+      "re": "\\b(a rounding error next to|is (essentially|effectively|basically) free|is (just )?electricity|is decorative|silent success|are the actual product|the expensive kind|the dangerous failure mode|doing the arithmetic|does (the )?arithmetic)\\b",
+      "why": "aphorism; a line written to be quoted rather than to inform",
+      "instead": "give the number or the action the line stands for"
+    },
+    {
+      "re": "\\b(isn('|’)t|wasn('|’)t|is not|was not|aren('|’)t|weren('|’)t|not)\\b[^.;—]{0,70}\\s[—–]\\s*(it|they|it('|’)s|that|this)\\b",
+      "why": "two-beat reversal (\"it wasn't X — it was Y\"); the most recognisable LLM sentence shape",
+      "instead": "say what it was; the reader did not assume X"
+    },
+    {
+      "re": "\\bthe (one|single|only|real|main|key) (thing|design decision|decision|rule|lesson|detail|idea|trick)\\b[^.:]{0,60}:",
+      "why": "colon lead-in that promises a revelation",
+      "instead": "start the sentence with the fact"
+    },
+    {
+      "re": "\\bcaveat I('|’)d want\\b|\\bhold me to\\b|\\bI('|’)d want a reviewer\\b",
+      "why": "performed humility",
+      "instead": "\"These scores are against LLM labels, not human ones.\""
+    },
+    {
+      "re": "(?<!off-the-)(?<!off the )\\bshelf\\b(?!\\s+life)",
+      "why": "marketplace-as-shelf metaphor; keep at most one, defined on first use",
+      "instead": "\"marketplace listing page\"",
+      "severity": "warn"
+    }
+  ],
+  "structure": {
+    "maxSentenceWords": 45,
+    "maxEmDashesPerBlock": 2,
+    "maxParenAsidesPerBlock": 2,
+    "minClosingSentenceWords": 7,
+    "minSentencesForClosingCheck": 3,
+    "maxHyperparametersPerSentence": 3,
+    "maxFigureRepeats": 2
+  },
+  "hyperparameter": "\\b[a-z_]*\\w*\\s*=\\s*\\$?\\d[\\d.,]*(?:e[+-]?\\d+)?|\\b(?:lr|learning[ _-]?rate|batch[ _-]?size|per_device_train_batch_size|gradient[ _-]?accumulation(?:[ _-]?steps)?|grad[ _-]?accum|num_train_epochs|max_steps|max_epochs|warmup(?:[ _-]?(?:steps|ratio))?|weight[ _-]?decay|dropout|threshold|temperature|top[ _-]?[pk]|seed|max[ _-]?(?:length|len|tokens)|hidden[ _-]?size|num[ _-]?layers|beam[ _-]?size)\\b\\s*(?:of|=|:|at|to)?\\s*\\$?\\d[\\d.,]*(?:e[+-]?\\d+)?|(?<![\\w.])\\$?\\d[\\d.,]*(?:e[+-]?\\d+)?\\s*(?:lr|learning[ _-]?rate|batch[ _-]?size|per_device_train_batch_size|gradient[ _-]?accumulation(?:[ _-]?steps)?|grad[ _-]?accum|num_train_epochs|max_steps|max_epochs|warmup(?:[ _-]?(?:steps|ratio))?|weight[ _-]?decay|dropout|threshold|temperature|top[ _-]?[pk]|seed|max[ _-]?(?:length|len|tokens)|hidden[ _-]?size|num[ _-]?layers|beam[ _-]?size)\\b",
+  "headlineActivity": "^(?:I|We)\\s+(?:fine-tuned|fine tuned|finetuned|built|trained|wrote|made|shipped|ran|used|tried|spent|set up|created|scraped|labeled|labelled|deployed|added|migrated|rewrote|implemented|automated|taught)\\b",
+  "versionPrefix": "\\b(?:v|version|Gemini|GPT|Claude|Qwen|Llama|Mistral|GLiNER|DeBERTa|Python|Node(?:\\.js)?|Next(?:\\.js)?|React|TypeScript|Vue|Angular|Windows|iOS|Android|macOS|Ubuntu|Debian|CUDA|PyTorch|TensorFlow)[ -]?$"
+}
