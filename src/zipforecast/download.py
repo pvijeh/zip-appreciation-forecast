@@ -1,4 +1,5 @@
-"""Fetch the raw inputs: Zillow ZHVI/ZORI by ZIP, Census ACS 5-year by ZCTA, ZCTA centroids."""
+"""Fetch the raw inputs: Zillow series by ZIP, FRED macro series, Census ACS 5-year by ZCTA,
+ZCTA centroids."""
 
 import io
 import logging
@@ -71,6 +72,15 @@ def download_zillow(client: httpx.Client) -> None:
     _download(config.ZHVI_URL, config.ZHVI_FILE, client, mutable=True)
     _download(config.ZORI_URL, config.ZORI_FILE, client, mutable=True)
     _download(config.ZHVF_URL, config.ZHVF_FILE, client, mutable=True)
+    for name, url in config.ZILLOW_TEMPO_URLS.items():
+        _download(url, config.ZILLOW_TEMPO_FILES[name], client, mutable=True)
+
+
+def download_fred(client: httpx.Client) -> None:
+    config.RAW_DIR.mkdir(parents=True, exist_ok=True)
+    for name, series in config.FRED_SERIES.items():
+        url = config.FRED_URL.format(series=series)
+        _download(url, config.FRED_FILES[name], client, mutable=True)
 
 
 def download_gazetteer(client: httpx.Client) -> None:
@@ -151,6 +161,7 @@ def download_acs_year(client: httpx.Client, year: int) -> Path | None:
 def download_all() -> None:
     with httpx.Client() as client:
         download_zillow(client)
+        download_fred(client)
         download_gazetteer(client)
         if not census_api_key():
             raise SystemExit("CENSUS_API_KEY is not set; get a free key at api.census.gov")

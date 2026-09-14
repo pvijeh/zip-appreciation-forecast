@@ -17,15 +17,21 @@ MODEL_LABELS = {
     "gbm_recency": "Gradient boosting, all US metros, recent origins weighted more",
     "ridge_national": "Ridge regression, trained on all US metros",
     "gbm_nyc_only": "Gradient boosting, trained on NYC metro only",
+    "gbm_county_target": "Gradient boosting, all US metros, target neutralized by county",
     "momentum_1y": "Baseline: last year's relative growth continues",
     "momentum_5y": "Baseline: last 5 years' relative growth continues",
     "catch_up_price": "Baseline: cheaper than the metro median catches up",
     "catch_up_neighbors": "Baseline: cheaper than the 10 nearest ZIPs catches up",
+    "beta_x_metro_trend": "Baseline: 10-year beta to metro times the metro's past-year growth",
 }
 
 
 def _fmt(x: float) -> str:
     return "n/a" if pd.isna(x) else f"{x:+.3f}"
+
+
+def _interval(lo: float, hi: float) -> str:
+    return "n/a" if pd.isna(lo) or pd.isna(hi) else f"{lo:+.2f} to {hi:+.2f}"
 
 
 def _pct(log_change: float) -> str:
@@ -37,15 +43,18 @@ def _summary_table(summary: pd.DataFrame, horizon: int) -> str:
     s["order"] = s["model"].map({m: i for i, m in enumerate(MODEL_LABELS)})
     s = s.sort_values("order")
     lines = [
-        "| Model | Spearman, NYC ZIPs | Spearman, all ZIPs | Top-fifth minus bottom-fifth, "
-        "NYC (log pts) | Worst year, NYC Spearman | Folds |",
-        "|---|---|---|---|---|---|",
+        "| Model | Spearman, NYC ZIPs | 90% interval | Spearman, NYC within county | "
+        "Spearman, all ZIPs | Top-fifth minus bottom-fifth, NYC (log pts) | "
+        "Worst year, NYC Spearman | Folds |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for _, r in s.iterrows():
+        within = r.get("spearman_nyc_within_county_mean", np.nan)
+        ci = _interval(r.get("spearman_nyc_ci_low", np.nan), r.get("spearman_nyc_ci_high", np.nan))
         lines.append(
-            f"| {MODEL_LABELS.get(r.model, r.model)} | {_fmt(r.spearman_nyc_mean)} | "
-            f"{_fmt(r.spearman_national_mean)} | {_fmt(r.q5_q1_spread_nyc_mean)} | "
-            f"{_fmt(r.spearman_nyc_min)} | {int(r.n_folds)} |"
+            f"| {MODEL_LABELS.get(r.model, r.model)} | {_fmt(r.spearman_nyc_mean)} | {ci} | "
+            f"{_fmt(within)} | {_fmt(r.spearman_national_mean)} | "
+            f"{_fmt(r.q5_q1_spread_nyc_mean)} | {_fmt(r.spearman_nyc_min)} | {int(r.n_folds)} |"
         )
     return "\n".join(lines)
 
@@ -56,11 +65,24 @@ def _beats_baseline_line(summary: pd.DataFrame, horizon: int) -> str:
         return ""
     r = s.iloc[0]
     label = MODEL_LABELS[r.best_baseline].removeprefix("Baseline: ")
-    return (
+    text = (
         f"Best baseline at this horizon: {label}. The national gradient boosting model beat it "
         f"on NYC ZIPs in {int(r.folds_gbm_beats_best_baseline)} of {int(r.folds_compared)} "
         "test origins where both were scored."
     )
+    gap = r.get("gap_vs_best_baseline", np.nan)
+    if not pd.isna(gap):
+        ci = _interval(r.get("gap_ci_low", np.nan), r.get("gap_ci_high", np.nan))
+        verdict = (
+            "the interval excludes zero"
+            if r.gap_ci_low > 0 or r.gap_ci_high < 0
+            else "the interval includes zero, so the two are not distinguishable on this data"
+        )
+        text += (
+            f" Mean gap in NYC Spearman, model minus baseline: {_fmt(gap)}, block-bootstrap 90% "
+            f"interval {ci} ({verdict})."
+        )
+    return text
 
 
 def _per_year_table(results: pd.DataFrame, horizon: int) -> str:
@@ -99,6 +121,95 @@ def _factor_table(history: pd.DataFrame, nyc: bool) -> str:
     for _, r in history.iterrows():
         lines.append(f"| {int(r.origin_year)} | " + " | ".join(_fmt(r[c])[:5] for c in cols) + " |")
     return "\n".join(lines)
+
+
+def _beta_table(beta: pd.DataFrame) -> str:
+    lines = [
+        "| Origin | ZIPs | Beta vs realized, all metros | ZIPs whose metro rose | "
+        "ZIPs whose metro fell | Share of ZIPs in rising metros | NYC metro growth | "
+        "Beta vs realized, NYC |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for _, r in beta.iterrows():
+        lines.append(
+            f"| {int(r.origin_year)} | {int(r.n):,} | {_fmt(r.beta_spearman_all)} | "
+            f"{_fmt(r.beta_spearman_up_metros)} | {_fmt(r.beta_spearman_down_metros)} | "
+            f"{100 * r.share_zips_in_up_metros:.0f}% | {_pct(r.nyc_metro_growth)} | "
+            f"{_fmt(r.beta_spearman_nyc)} |"
+        )
+    return "\n".join(lines)
+
+
+ABLATION_LABELS = {
+    "full": "all features",
+    "without_listing_tempo": (
+        "without Zillow listing tempo (inventory, new listings, days to pending, price cuts)"
+    ),
+    "without_county": "without county-relative price and momentum",
+    "without_beta": "without 10-year beta to metro",
+    "without_regime": (
+        "without regime features (mortgage rate, price-to-rent, trailing factor signs)"
+    ),
+    "without_all_groups": "without all four groups",
+}
+
+
+def _ablation_section(ablation: pd.DataFrame) -> list[str]:
+    cols = [c for c in ABLATION_LABELS if c in ablation.columns]
+    full = ablation["full"].mean()
+    lines = [
+        "| Features | Mean NYC Spearman | Change from all features | "
+        "Origins where the group helped, of those where it changed the score |",
+        "|---|---|---|---|",
+    ]
+    for c in cols:
+        mean = ablation[c].mean()
+        if c == "full":
+            lines.append(f"| {ABLATION_LABELS[c]} | {_fmt(mean)} | | |")
+            continue
+        helped = int((ablation["full"] > ablation[c]).sum())
+        changed = int((ablation["full"] != ablation[c]).sum())
+        lines.append(
+            f"| {ABLATION_LABELS[c]} | {_fmt(mean)} | {_fmt(full - mean)} | {helped} of {changed} |"
+        )
+    per_year = [
+        "| Test origin | " + " | ".join(c.replace("without_", "no ") for c in cols) + " |",
+        "|---" * (len(cols) + 1) + "|",
+    ]
+    for _, r in ablation.iterrows():
+        per_year.append(
+            f"| {int(r.test_year)} | " + " | ".join(_fmt(r[c])[:5] for c in cols) + " |"
+        )
+    return [
+        "### Which feature groups the 1-year model uses",
+        "",
+        "The national gradient boosting model refit with one group of features removed, scored on "
+        "the same held-out NYC origins. The change column is the group's contribution. Zillow's "
+        "listing files start in 2018, so the tempo features are empty at earlier origins and "
+        "removing them changes nothing there.",
+        "",
+        *lines,
+        "",
+        *per_year,
+        "",
+    ]
+
+
+def _beta_summary(beta: pd.DataFrame) -> str:
+    up = beta["beta_spearman_up_metros"].mean()
+    down = beta["beta_spearman_down_metros"].mean()
+    nyc_up = beta.loc[beta["nyc_metro_growth"] > 0, "beta_spearman_nyc"]
+    nyc_down = beta.loc[beta["nyc_metro_growth"] < 0, "beta_spearman_nyc"]
+    return (
+        f"Averaged over origins: in metros that rose over the next year, ZIP beta and realized "
+        f"relative growth had Spearman {_fmt(up)}; in metros that fell, {_fmt(down)}. "
+        f"For NYC, the {len(nyc_up)} origins where the metro rose average {_fmt(nyc_up.mean())} "
+        f"and the {len(nyc_down)} where it fell average {_fmt(nyc_down.mean())}. "
+        "Beta is the slope of a ZIP's annual growth on its metro's over the trailing "
+        f"{config.BETA_WINDOW_YEARS} years (at least {config.BETA_MIN_YEARS} years observed). "
+        "A positive number in rising metros and a negative one in falling metros is the "
+        "high-beta pattern: the ZIPs that gain the most in good years lose the most in bad ones."
+    )
 
 
 def _zhvf_line(ranking: pd.DataFrame) -> str:
@@ -160,6 +271,10 @@ def _skill_for(summary: pd.DataFrame | None, horizon: int) -> dict:
     return {
         m: {
             "spearman_nyc_mean": _json_value(s.loc[m, "spearman_nyc_mean"]),
+            "spearman_nyc_ci90": [
+                _json_value(s.loc[m, c]) if c in s.columns else None
+                for c in ("spearman_nyc_ci_low", "spearman_nyc_ci_high")
+            ],
             "spearman_nyc_min": _json_value(s.loc[m, "spearman_nyc_min"]),
             "folds": int(s.loc[m, "n_folds"]),
         }
@@ -221,9 +336,15 @@ def write_report(
     factors: dict[int, pd.DataFrame],
     rankings: dict[int, pd.DataFrame],
     panel: pd.DataFrame,
+    beta: pd.DataFrame | None = None,
+    ablation: pd.DataFrame | None = None,
 ) -> None:
     config.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     summary.to_csv(config.OUTPUT_DIR / "evaluation_summary.csv", index=False)
+    if beta is not None:
+        beta.to_csv(config.OUTPUT_DIR / "beta_history_1y.csv", index=False)
+    if ablation is not None:
+        ablation.to_csv(config.OUTPUT_DIR / "ablation_1y.csv", index=False)
     for h, r in results.items():
         r.to_csv(config.OUTPUT_DIR / f"evaluation_{h}y_by_year.csv", index=False)
     for h, f in factors.items():
@@ -251,9 +372,19 @@ def write_report(
         "so a 2005 price level and a 2026 price level are compared only to their own metro. "
         "Spearman is the rank correlation between predicted and realized relative growth on "
         "test origins the model never saw; each test origin is trained only on origins whose "
-        "outcome was known by then.",
+        "outcome was known by then. The 90% interval resamples test origins in blocks as long "
+        "as the horizon; with 7 to 16 origins it is a rough guide, not a precise one.",
         "",
     ]
+    if beta is not None and not beta.empty:
+        parts += [
+            "## Does a ZIP's beta to its metro predict its relative growth?",
+            "",
+            _beta_summary(beta),
+            "",
+            _beta_table(beta),
+            "",
+        ]
     for h in sorted(results):
         parts += [
             f"## {h}-year horizon",
@@ -268,6 +399,10 @@ def write_report(
             "",
             _per_year_table(results[h], h),
             "",
+        ]
+        if h == 1 and ablation is not None and not ablation.empty:
+            parts += _ablation_section(ablation)
+        parts += [
             "### One feature at a time: Spearman with realized relative growth, by origin",
             "",
             "A positive number means ZIPs high on that feature went on to beat their metro. "

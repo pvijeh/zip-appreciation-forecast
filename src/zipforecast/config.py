@@ -20,6 +20,29 @@ ZHVF_URL = (
     "https://files.zillowstatic.com/research/public_csvs/zhvf_growth/"
     "Zip_zhvf_growth_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv"
 )
+# Zillow market-tempo series by ZIP, monthly from 2018-03: for-sale inventory, mean days to
+# pending, share of listings with a price cut, new listings.
+ZILLOW_TEMPO_URLS = {
+    "inventory": (
+        "https://files.zillowstatic.com/research/public_csvs/invt_fs/"
+        "Zip_invt_fs_uc_sfrcondo_sm_month.csv"
+    ),
+    "days_pending": (
+        "https://files.zillowstatic.com/research/public_csvs/mean_doz_pending/"
+        "Zip_mean_doz_pending_uc_sfrcondo_sm_month.csv"
+    ),
+    "price_cut_share": (
+        "https://files.zillowstatic.com/research/public_csvs/perc_listings_price_cut/"
+        "Zip_perc_listings_price_cut_uc_sfrcondo_sm_month.csv"
+    ),
+    "new_listings": (
+        "https://files.zillowstatic.com/research/public_csvs/new_listings/"
+        "Zip_new_listings_uc_sfrcondo_sm_month.csv"
+    ),
+}
+# FRED series for the regime features: 30-year mortgage rate (weekly) and rent CPI (monthly).
+FRED_SERIES = {"mortgage_rate": "MORTGAGE30US", "rent_cpi": "CUSR0000SEHA"}
+FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}"
 GAZETTEER_URL = (
     "https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2023_Gazetteer/"
     "2023_Gaz_zcta_national.zip"
@@ -28,6 +51,8 @@ GAZETTEER_URL = (
 ZHVI_FILE = RAW_DIR / "zhvi_zip.csv"
 ZORI_FILE = RAW_DIR / "zori_zip.csv"
 ZHVF_FILE = RAW_DIR / "zhvf_zip.csv"
+ZILLOW_TEMPO_FILES = {name: RAW_DIR / f"zillow_{name}_zip.csv" for name in ZILLOW_TEMPO_URLS}
+FRED_FILES = {name: RAW_DIR / f"fred_{name}.csv" for name in FRED_SERIES}
 GAZETTEER_FILE = RAW_DIR / "zcta_gazetteer.txt"
 PANEL_FILE = PROCESSED_DIR / "panel.parquet"
 
@@ -90,3 +115,7 @@ FIRST_TEST_ORIGIN_YEAR = 2010
 NEIGHBOR_COUNT = 10
 RECENCY_HALF_LIFE_YEARS = 4
 MIN_ZIPS_PER_METRO = 10
+BETA_WINDOW_YEARS = 10
+BETA_MIN_YEARS = 6
+PRICE_TO_RENT_MEAN_YEARS = 10
+BOOTSTRAP_DRAWS = 2000
