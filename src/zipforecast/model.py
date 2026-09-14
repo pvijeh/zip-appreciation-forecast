@@ -37,6 +37,8 @@ def make_ridge():
 
 
 BASELINES = {
+    # Continue the ZIP's own outperformance of its metro over the past year.
+    "momentum_1y": lambda df: df["mom_1y_rel"],
     # Continue the ZIP's own outperformance of its metro over the past five years.
     "momentum_5y": lambda df: df["mom_5y_rel"],
     # Cheaper-than-metro ZIPs catch up.
@@ -167,19 +169,26 @@ def summarize(results: pd.DataFrame) -> pd.DataFrame:
     for m in metrics:
         summary[f"{m}_min"] = grouped[m].min()
     summary["n_folds"] = grouped.size()
-    summary["share_folds_gbm_beats_momentum"] = np.nan
-    for (h, model), _ in summary.iterrows():
-        if model == "gbm_national":
-            g = results[(results.horizon == h) & (results.model == "gbm_national")].set_index(
-                "test_year"
-            )["spearman_nyc"]
-            b = results[(results.horizon == h) & (results.model == "momentum_5y")].set_index(
-                "test_year"
-            )["spearman_nyc"]
-            both = pd.concat([g, b], axis=1, keys=["g", "b"]).dropna()
-            summary.loc[(h, model), "share_folds_gbm_beats_momentum"] = (
-                (both["g"] > both["b"]).mean() if len(both) else np.nan
-            )
+    # Per horizon: the baseline with the best mean NYC Spearman, and how often the national
+    # gradient boosting model beats it fold by fold.
+    summary["best_baseline"] = None
+    summary["share_folds_gbm_beats_best_baseline"] = np.nan
+    for h in summary.index.get_level_values("horizon").unique():
+        baselines = summary.loc[h].loc[lambda s: s.index.isin(BASELINES), "spearman_nyc_mean"]
+        if baselines.empty or (h, "gbm_national") not in summary.index:
+            continue
+        best = baselines.idxmax()
+        by_year = (
+            results[results.horizon == h]
+            .pivot(index="test_year", columns="model", values="spearman_nyc")[
+                ["gbm_national", best]
+            ]
+            .dropna()
+        )
+        summary.loc[(h, "gbm_national"), "best_baseline"] = best
+        summary.loc[(h, "gbm_national"), "share_folds_gbm_beats_best_baseline"] = (
+            (by_year["gbm_national"] > by_year[best]).mean() if len(by_year) else np.nan
+        )
     return summary.reset_index()
 
 
@@ -262,6 +271,20 @@ def _percentile_to_relative_growth(
     return pd.Series(by_band.to_numpy()[np.minimum((pct * bins).astype(int), bins - 1)], pct.index)
 
 
+def load_zhvf() -> pd.DataFrame:
+    """Zillow's published 12-month ZHVI forecast (% change) by ZIP; empty if not downloaded."""
+    if not config.ZHVF_FILE.exists():
+        return pd.DataFrame(columns=["zillow_1y_forecast_pct"], index=pd.Index([], name="zip"))
+    raw = pd.read_csv(config.ZHVF_FILE, dtype={"RegionName": str})
+    base = pd.to_datetime(raw["BaseDate"].iloc[0])
+    month_cols = [c for c in raw.columns if c[:2] == "20"]
+    twelve = min(month_cols, key=lambda c: abs((pd.Timestamp(c) - base).days - 365))
+    out = raw.set_index(raw["RegionName"].str.zfill(5))[[twelve]]
+    out.columns = ["zillow_1y_forecast_pct"]
+    out.index.name = "zip"
+    return out
+
+
 RANKING_CONTEXT = [
     "zip",
     "city",
@@ -315,6 +338,7 @@ def rank_nyc(panel: pd.DataFrame, horizon: int) -> pd.DataFrame:
     )
     latest["zhvi"] = np.exp(latest["log_zhvi"]).round(0)
     latest["origin"] = latest["origin"].dt.date
+    latest = latest.join(load_zhvf(), on="zip")
     cols = [
         "rank",
         "score",
@@ -323,6 +347,7 @@ def rank_nyc(panel: pd.DataFrame, horizon: int) -> pd.DataFrame:
         "pred_gbm",
         "pred_ridge",
         *RANKING_CONTEXT,
+        "zillow_1y_forecast_pct",
         "origin",
     ]
     cols = [c for c in cols if c in latest.columns]

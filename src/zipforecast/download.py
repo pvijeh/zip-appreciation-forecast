@@ -70,6 +70,7 @@ def download_zillow(client: httpx.Client) -> None:
     config.RAW_DIR.mkdir(parents=True, exist_ok=True)
     _download(config.ZHVI_URL, config.ZHVI_FILE, client, mutable=True)
     _download(config.ZORI_URL, config.ZORI_FILE, client, mutable=True)
+    _download(config.ZHVF_URL, config.ZHVF_FILE, client, mutable=True)
 
 
 def download_gazetteer(client: httpx.Client) -> None:

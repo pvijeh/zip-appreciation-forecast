@@ -1,12 +1,14 @@
 """Write the evaluation tables and NYC rankings under output/."""
 
+import datetime as dt
+import json
 import logging
 
 import numpy as np
 import pandas as pd
 
 from zipforecast import config
-from zipforecast.model import FACTOR_HISTORY_FEATURES
+from zipforecast.model import FACTOR_HISTORY_FEATURES, _spearman
 
 log = logging.getLogger(__name__)
 
@@ -15,6 +17,7 @@ MODEL_LABELS = {
     "gbm_recency": "Gradient boosting, all US metros, recent origins weighted more",
     "ridge_national": "Ridge regression, trained on all US metros",
     "gbm_nyc_only": "Gradient boosting, trained on NYC metro only",
+    "momentum_1y": "Baseline: last year's relative growth continues",
     "momentum_5y": "Baseline: last 5 years' relative growth continues",
     "catch_up_price": "Baseline: cheaper than the metro median catches up",
     "catch_up_neighbors": "Baseline: cheaper than the 10 nearest ZIPs catches up",
@@ -45,6 +48,19 @@ def _summary_table(summary: pd.DataFrame, horizon: int) -> str:
             f"{_fmt(r.spearman_nyc_min)} | {int(r.n_folds)} |"
         )
     return "\n".join(lines)
+
+
+def _beats_baseline_line(summary: pd.DataFrame, horizon: int) -> str:
+    s = summary[(summary.horizon == horizon) & (summary.model == "gbm_national")]
+    if s.empty or pd.isna(s["best_baseline"].iloc[0]):
+        return ""
+    r = s.iloc[0]
+    wins = round(r.share_folds_gbm_beats_best_baseline * r.n_folds)
+    label = MODEL_LABELS[r.best_baseline].removeprefix("Baseline: ")
+    return (
+        f"Best baseline at this horizon: {label}. The national gradient boosting model beat it "
+        f"on NYC ZIPs in {wins} of {int(r.n_folds)} test origins."
+    )
 
 
 def _per_year_table(results: pd.DataFrame, horizon: int) -> str:
@@ -85,6 +101,21 @@ def _factor_table(history: pd.DataFrame, nyc: bool) -> str:
     return "\n".join(lines)
 
 
+def _zhvf_line(ranking: pd.DataFrame) -> str:
+    zhvf = ranking["zillow_1y_forecast_pct"]
+    if not zhvf.notna().any():
+        return "Zillow's published 1-year forecast was not downloaded, so no comparison."
+    rho = _spearman(ranking["score"], zhvf)
+    top = zhvf[ranking["rank"] <= 25].mean()
+    return (
+        f"Comparison with Zillow's own published 12-month forecast (ZHVF) for the same ZIPs: "
+        f"Spearman between our score and Zillow's forecast {_fmt(rho)} over "
+        f"{int(zhvf.notna().sum())} ZIPs; Zillow expects {top:+.1f}% for our top 25 versus "
+        f"{zhvf.mean():+.1f}% for all NYC-metro ZIPs. Zillow's horizon is one year, so this "
+        "is a check on agreement, not on accuracy."
+    )
+
+
 def _importance_table(importance: pd.DataFrame, n: int = 15) -> str:
     lines = ["| Feature | Permutation importance (MSE increase) |", "|---|---|"]
     for _, r in importance.head(n).iterrows():
@@ -97,7 +128,83 @@ PER_HORIZON_FILES = (
     "factor_history_{h}y.csv",
     "feature_importance_{h}y.csv",
     "nyc_ranking_{h}y.csv",
+    "nyc_forecast_{h}y.json",
 )
+
+JSON_FIELDS = {
+    "rank": "rank",
+    "zip": "zip",
+    "city": "city",
+    "county": "county",
+    "state": "state",
+    "zhvi": "zhvi",
+    "score": "score",
+    "nyc_percentile": "nyc_percentile",
+    "hist_relative_pct": "historical_growth_vs_metro_pct",
+    "zillow_1y_forecast_pct": "zillow_1y_forecast_pct",
+}
+
+
+def _json_value(v):
+    if isinstance(v, np.integer):
+        return int(v)
+    if isinstance(v, float | np.floating):
+        return None if np.isnan(v) else round(float(v), 2)
+    return v
+
+
+def _skill_for(summary: pd.DataFrame | None, horizon: int) -> dict:
+    if summary is None:
+        return {}
+    s = summary[summary.horizon == horizon].set_index("model")
+    return {
+        m: {
+            "spearman_nyc_mean": _json_value(s.loc[m, "spearman_nyc_mean"]),
+            "spearman_nyc_min": _json_value(s.loc[m, "spearman_nyc_min"]),
+            "folds": int(s.loc[m, "n_folds"]),
+        }
+        for m in MODEL_LABELS
+        if m in s.index
+    }
+
+
+def write_ranking_json(
+    ranking: pd.DataFrame, horizon: int, summary: pd.DataFrame | None = None
+) -> None:
+    """Ranked NYC-metro ZIPs plus the measured walk-forward skill needed to read them."""
+    zhvf = ranking["zillow_1y_forecast_pct"]
+    doc = {
+        "horizon_years": horizon,
+        "origin": str(ranking["origin"].iloc[0]),
+        "generated": dt.date.today().isoformat(),
+        "n_zips": int(len(ranking)),
+        "score_meaning": (
+            "Average of the gradient boosting and ridge models' predicted percentile of "
+            "forward price growth within the NYC metro, 0-100. Not an absolute forecast."
+        ),
+        "historical_growth_vs_metro_pct_meaning": (
+            "What NYC ZIPs at this predicted percentile realized over the horizon, relative "
+            "to the metro, in past origins. A historical analogue, not a forecast."
+        ),
+        "walk_forward_skill_nyc": _skill_for(summary, horizon),
+        "spearman_score_vs_zillow_1y_forecast": _json_value(
+            _spearman(ranking["score"], zhvf) if zhvf.notna().any() else np.nan
+        ),
+        "price_vs_metro_median_pct_meaning": "ZHVI relative to the NYC-metro median ZIP.",
+        "zips": [
+            {
+                **{out: _json_value(r[src]) for src, out in JSON_FIELDS.items()},
+                "price_vs_metro_median_pct": _json_value(
+                    100 * (np.exp(r["log_price_rel_metro"]) - 1)
+                ),
+                "past_5y_growth_vs_metro_pct": _json_value(100 * (np.exp(r["mom_5y_rel"]) - 1)),
+            }
+            for _, r in ranking.iterrows()
+        ],
+    }
+    path = config.OUTPUT_DIR / f"nyc_forecast_{horizon}y.json"
+    path.write_text(json.dumps(doc, indent=1))
+    log.info("wrote %s", path)
 
 
 def _remove_stale_horizon_files(horizons: set[int]) -> None:
@@ -125,6 +232,7 @@ def write_report(
         imp.to_csv(config.OUTPUT_DIR / f"feature_importance_{h}y.csv", index=False)
     for h, rk in rankings.items():
         rk.to_csv(config.OUTPUT_DIR / f"nyc_ranking_{h}y.csv", index=False)
+        write_ranking_json(rk, h, summary)
 
     latest = panel["origin"].max().date()
     first = panel["origin"].min().date()
@@ -153,6 +261,8 @@ def write_report(
             "### Walk-forward results, averaged over test origins",
             "",
             _summary_table(summary, h),
+            "",
+            _beats_baseline_line(summary, h),
             "",
             "### NYC Spearman by test origin",
             "",
@@ -187,7 +297,10 @@ def write_report(
                 "of forward growth within the metro (100 = expected to beat every other ZIP). "
                 "The growth column is what NYC ZIPs at that percentile realized in past "
                 "origins, relative to the metro; it is a historical analogue, not a forecast of "
-                f"the metro itself. Full list with more columns in `output/nyc_ranking_{h}y.csv`.",
+                f"the metro itself. Full list with more columns in `output/nyc_ranking_{h}y.csv` "
+                f"and `output/nyc_forecast_{h}y.json`.",
+                "",
+                _zhvf_line(rankings[h]),
                 "",
                 _ranking_table(rankings[h], 25),
                 "",

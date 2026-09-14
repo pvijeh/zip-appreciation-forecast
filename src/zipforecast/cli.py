@@ -13,7 +13,7 @@ from zipforecast.model import (
     summarize,
 )
 from zipforecast.panel import build_panel
-from zipforecast.report import write_report
+from zipforecast.report import write_ranking_json, write_report
 
 
 def _load_panel() -> pd.DataFrame:
@@ -48,6 +48,7 @@ def cmd_rank(args) -> None:
         ranking = rank_nyc(panel, h)
         config.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         ranking.to_csv(config.OUTPUT_DIR / f"nyc_ranking_{h}y.csv", index=False)
+        write_ranking_json(ranking, h)
         print(ranking.head(25).to_string(index=False))
 
 

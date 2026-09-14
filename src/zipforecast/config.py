@@ -15,6 +15,11 @@ ZORI_URL = (
     "https://files.zillowstatic.com/research/public_csvs/zori/"
     "Zip_zori_uc_sfrcondomfr_sm_sa_month.csv"
 )
+# Zillow's own published forecast: % change in ZHVI over the next 1, 3 and 12 months by ZIP.
+ZHVF_URL = (
+    "https://files.zillowstatic.com/research/public_csvs/zhvf_growth/"
+    "Zip_zhvf_growth_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv"
+)
 GAZETTEER_URL = (
     "https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2023_Gazetteer/"
     "2023_Gaz_zcta_national.zip"
@@ -22,6 +27,7 @@ GAZETTEER_URL = (
 
 ZHVI_FILE = RAW_DIR / "zhvi_zip.csv"
 ZORI_FILE = RAW_DIR / "zori_zip.csv"
+ZHVF_FILE = RAW_DIR / "zhvf_zip.csv"
 GAZETTEER_FILE = RAW_DIR / "zcta_gazetteer.txt"
 PANEL_FILE = PROCESSED_DIR / "panel.parquet"
 
@@ -79,7 +85,7 @@ ACS_EDU_TABLES = {
     },
 }
 
-HORIZONS = (5, 10)
+HORIZONS = (1, 2, 3, 5, 10)
 FIRST_TEST_ORIGIN_YEAR = 2010
 NEIGHBOR_COUNT = 10
 RECENCY_HALF_LIFE_YEARS = 4
