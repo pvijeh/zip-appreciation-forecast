@@ -116,7 +116,6 @@ def write_report(
     panel: pd.DataFrame,
 ) -> None:
     config.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    _remove_stale_horizon_files(set(results))
     summary.to_csv(config.OUTPUT_DIR / "evaluation_summary.csv", index=False)
     for h, r in results.items():
         r.to_csv(config.OUTPUT_DIR / f"evaluation_{h}y_by_year.csv", index=False)
@@ -194,4 +193,5 @@ def write_report(
                 "",
             ]
     (config.OUTPUT_DIR / "REPORT.md").write_text("\n".join(parts))
+    _remove_stale_horizon_files(set(results))
     log.info("wrote %s", config.OUTPUT_DIR / "REPORT.md")
