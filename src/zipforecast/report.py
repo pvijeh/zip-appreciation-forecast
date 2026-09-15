@@ -337,6 +337,25 @@ def _zip_rows(ranking: pd.DataFrame) -> list[str]:
 
 RESULTS_FILE = config.ROOT / "RESULTS.md"
 
+# Sub-areas that get their own top-n table in RESULTS.md: (title, counties, city to bold).
+SUBSETS: list[tuple[str, list[str], str | None]] = [
+    (
+        "Manhattan, Brooklyn and Queens",
+        ["New York County", "Kings County", "Queens County"],
+        None,
+    ),
+    ("Hudson County, NJ", ["Hudson County"], "Jersey City"),
+]
+
+
+def _subset_rows(ranking: pd.DataFrame, bold_city: str | None) -> list[str]:
+    rows = []
+    for (_, r), line in zip(ranking.iterrows(), _zip_rows(ranking), strict=True):
+        cells = line.split(" | ")
+        cells[1] = f"**{cells[1]}**" if r["city"] == bold_city else cells[1]
+        rows.append(f"| {r['sub_rank']} " + " | ".join(cells))
+    return rows
+
 
 def _list_shape(rows: pd.DataFrame) -> str:
     """How the listed ZIPs sit against the metro: median price and last-year growth."""
@@ -413,6 +432,32 @@ def write_results_summary(ranking: pd.DataFrame, summary: pd.DataFrame | None, n
         *header,
         *_zip_rows(bottom),
         "",
+    ]
+    for name, counties, bold in SUBSETS:
+        area = ranking[ranking["county"].isin(counties)]
+        sub = area.head(n).copy()
+        sub["sub_rank"] = range(1, len(sub) + 1)
+        note = (
+            f"The first column is the rank within this area, the second the rank among all "
+            f"{len(ranking)} NYC-metro ZIPs."
+        )
+        if bold:
+            k = int((area["city"] == bold).sum())
+            note = (
+                f"{bold} alone has {k} ZIPs with Zillow coverage, shown in bold among the rest of "
+                f"the county. {note}"
+            )
+        parts += [
+            f"### {name}: top {len(sub)} of {len(area)}",
+            "",
+            note,
+            "",
+            "| # " + header[0],
+            "|---" + header[1],
+            *_subset_rows(sub, bold),
+            "",
+        ]
+    parts += [
         f"A rank correlation of {correlation} leaves room for a fair share of the top {n} to trail "
         f"the metro next year and a fair share of the bottom {n} to beat it. This is a shortlist "
         "of where to look, not a reason to buy or sell in any one ZIP.",

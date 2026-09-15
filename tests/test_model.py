@@ -138,12 +138,20 @@ def test_results_summary_lists_top_and_bottom_and_survives_missing_skill(monkeyp
             "origin": [pd.Timestamp("2026-07-31").date()] * n,
         }
     )
+    ranking.loc[ranking.index[-2:], ["county", "city"]] = [
+        ["Hudson County", "Hoboken"],
+        ["Hudson County", "Jersey City"],
+    ]
     write_results_summary(ranking, None)
     text = (tmp_path / "RESULTS.md").read_text()
-    assert "Is the model any good?" not in text
+    assert "Spearman" not in text
     assert "| 1 | 10000 |" in text and "| 40 | 10039 |" in text
     assert "| 16 | 10015 |" not in text and "| 25 | 10024 |" not in text
     assert "| n/a |" in text
+    assert "### Manhattan, Brooklyn and Queens: top 15 of 38" in text
+    assert "### Hudson County, NJ: top 2 of 2" in text
+    assert "Jersey City alone has 1 ZIPs" in text
+    assert "| 2 | 40 | **10039** |" in text
 
     summary = pd.DataFrame(
         {

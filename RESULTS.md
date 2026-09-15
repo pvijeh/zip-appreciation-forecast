@@ -52,4 +52,48 @@ The top 15 are priced 73% above the metro median and grew 5 points faster than t
 | 830 | 10280 | New York, NY | New York County | $822k | +11% | -3% | 17 | -3.0% | +2.1% |
 | 831 | 10036 | New York, NY | New York County | $997k | +34% | -8% | 17 | -3.0% | +0.6% |
 
+### Manhattan, Brooklyn and Queens: top 15 of 137
+
+The first column is the rank within this area, the second the rank among all 831 NYC-metro ZIPs.
+
+| # | Rank | ZIP | Place | County | Home value | vs metro median | Last year vs metro | Score | Past ZIPs in this score band, next year vs metro | Zillow 12-month forecast |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 15 | 11219 | New York, NY | Kings County | $1,286k | +73% | +3% | 68 | +1.3% | +2.9% |
+| 2 | 69 | 10282 | New York, NY | New York County | $2,208k | +197% | +3% | 63 | +0.9% | +2.5% |
+| 3 | 78 | 11204 | New York, NY | Kings County | $1,273k | +71% | +1% | 62 | +0.9% | +2.6% |
+| 4 | 93 | 11213 | New York, NY | Kings County | $1,148k | +54% | +4% | 61 | +0.9% | +2.0% |
+| 5 | 162 | 10012 | New York, NY | New York County | $2,914k | +292% | +5% | 59 | +0.4% | +4.1% |
+| 6 | 188 | 10013 | New York, NY | New York County | $3,742k | +404% | +2% | 58 | +0.4% | +2.7% |
+| 7 | 197 | 11418 | New York, NY | Queens County | $761k | +2% | +1% | 58 | +0.4% | +1.8% |
+| 8 | 199 | 11206 | New York, NY | Kings County | $1,153k | +55% | +5% | 58 | +0.4% | +3.6% |
+| 9 | 230 | 11233 | New York, NY | Kings County | $1,032k | +39% | +0% | 57 | +0.4% | +1.7% |
+| 10 | 233 | 11434 | New York, NY | Queens County | $722k | -3% | +1% | 57 | +0.4% | +2.0% |
+| 11 | 237 | 11436 | New York, NY | Queens County | $700k | -6% | +4% | 57 | +0.4% | +2.3% |
+| 12 | 241 | 11370 | New York, NY | Queens County | $828k | +11% | +1% | 57 | +0.4% | +1.9% |
+| 13 | 245 | 11225 | New York, NY | Kings County | $1,162k | +56% | +0% | 56 | +0.4% | +2.4% |
+| 14 | 253 | 11422 | New York, NY | Queens County | $747k | +1% | -0% | 56 | +0.4% | +1.7% |
+| 15 | 256 | 11105 | New York, NY | Queens County | $1,152k | +55% | +1% | 56 | +0.4% | +1.6% |
+
+### Hudson County, NJ: top 15 of 15
+
+Jersey City alone has 6 ZIPs with Zillow coverage, shown in bold among the rest of the county. The first column is the rank within this area, the second the rank among all 831 NYC-metro ZIPs.
+
+| # | Rank | ZIP | Place | County | Home value | vs metro median | Last year vs metro | Score | Past ZIPs in this score band, next year vs metro | Zillow 12-month forecast |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 609 | 07086 | Weehawken, NJ | Hudson County | $878k | +18% | -1% | 45 | -0.3% | +2.4% |
+| 2 | 610 | **07310** | Jersey City, NJ | Hudson County | $1,017k | +37% | +9% | 45 | -0.3% | +1.3% |
+| 3 | 658 | 07032 | Kearny, NJ | Hudson County | $585k | -21% | -2% | 43 | -0.8% | +2.2% |
+| 4 | 698 | 07002 | Bayonne, NJ | Hudson County | $600k | -19% | -3% | 41 | -0.8% | +2.1% |
+| 5 | 704 | 07087 | Union City, NJ | Hudson County | $578k | -22% | +0% | 40 | -0.8% | +2.2% |
+| 6 | 709 | **07305** | Jersey City, NJ | Hudson County | $540k | -27% | -6% | 40 | -0.8% | +1.3% |
+| 7 | 732 | 07030 | Hoboken, NJ | Hudson County | $898k | +21% | -1% | 39 | -1.2% | +2.4% |
+| 8 | 762 | **07302** | Jersey City, NJ | Hudson County | $903k | +21% | -4% | 35 | -1.6% | +1.1% |
+| 9 | 770 | 07047 | North Bergen Township, NJ | Hudson County | $594k | -20% | -3% | 34 | -1.6% | +2.0% |
+| 10 | 777 | **07304** | Jersey City, NJ | Hudson County | $547k | -26% | -5% | 32 | -1.6% | +1.2% |
+| 11 | 791 | 07094 | Secaucus, NJ | Hudson County | $692k | -7% | -1% | 31 | -1.6% | +2.0% |
+| 12 | 806 | **07306** | Jersey City, NJ | Hudson County | $546k | -27% | -8% | 27 | -2.0% | +1.1% |
+| 13 | 809 | **07307** | Jersey City, NJ | Hudson County | $774k | +4% | -3% | 27 | -2.0% | +1.7% |
+| 14 | 814 | 07093 | West New York, NJ | Hudson County | $449k | -40% | -1% | 26 | -2.0% | +1.7% |
+| 15 | 822 | 07029 | Harrison, NJ | Hudson County | $584k | -21% | -4% | 24 | -2.5% | +2.0% |
+
 A rank correlation of +0.44 leaves room for a fair share of the top 15 to trail the metro next year and a fair share of the bottom 15 to beat it. This is a shortlist of where to look, not a reason to buy or sell in any one ZIP.
