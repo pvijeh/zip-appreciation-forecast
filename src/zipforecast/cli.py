@@ -15,7 +15,7 @@ from zipforecast.model import (
     summarize,
 )
 from zipforecast.panel import build_panel
-from zipforecast.report import write_ranking_json, write_report
+from zipforecast.report import write_ranking_json, write_report, write_results_summary
 
 log = logging.getLogger(__name__)
 
@@ -86,6 +86,8 @@ def cmd_rank(args) -> None:
         config.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         ranking.to_csv(config.OUTPUT_DIR / f"nyc_ranking_{h}y.csv", index=False)
         write_ranking_json(ranking, h, summary)
+        if h == 1:
+            write_results_summary(ranking, summary)
         print(ranking.head(25).to_string(index=False))
 
 

@@ -322,6 +322,106 @@ def write_ranking_json(
     log.info("wrote %s", path)
 
 
+def _zip_rows(ranking: pd.DataFrame) -> list[str]:
+    rows = []
+    for _, r in ranking.iterrows():
+        zhvf = r["zillow_1y_forecast_pct"]
+        rows.append(
+            f"| {int(r['rank'])} | {r['zip']} | {r['city']}, {r['state']} | {r['county']} | "
+            f"${r['zhvi'] / 1000:,.0f}k | {_pct(r['log_price_rel_metro'])} | "
+            f"{_pct(r['mom_1y_rel'])} | {r['score']:.0f} | {r['hist_relative_pct']:+.1f}% | "
+            f"{'n/a' if pd.isna(zhvf) else f'{zhvf:+.1f}%'} |"
+        )
+    return rows
+
+
+RESULTS_FILE = config.ROOT / "RESULTS.md"
+
+
+def _list_shape(rows: pd.DataFrame) -> str:
+    """How the listed ZIPs sit against the metro: median price and last-year growth."""
+    price = rows["log_price_rel_metro"].median()
+    growth = rows["mom_1y_rel"].median()
+    return (
+        f"priced {_pct(price).lstrip('+-')} {'above' if price >= 0 else 'below'} the metro "
+        f"median and grew {abs(100 * (np.exp(growth) - 1)):.0f} points "
+        f"{'faster' if growth >= 0 else 'slower'} than the metro last year"
+    )
+
+
+def write_results_summary(ranking: pd.DataFrame, summary: pd.DataFrame | None, n: int = 15) -> None:
+    """One-page RESULTS.md: what the 1-year model scored and the top and bottom NYC ZIPs."""
+    header = [
+        "| Rank | ZIP | Place | County | Home value | vs metro median | Last year vs metro | "
+        "Score | Past ZIPs in this score band, next year vs metro | Zillow 12-month forecast |",
+        "|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    origin = ranking["origin"].iloc[0]
+    top, bottom = ranking.head(n), ranking.tail(n)
+    parts = ["# Results: a small one-year edge, nothing at five to ten years", ""]
+    correlation = "well under +0.5"
+    if summary is not None and (summary.horizon == 1).any():
+        s = summary[summary.horizon == 1].set_index("model")
+        gbm, mom = s.loc["gbm_national"], s.loc["momentum_1y"]
+        correlation = f"{gbm['spearman_nyc_mean']:+.2f}"
+        parts += [
+            "The model ranks NYC-metro ZIPs by expected price growth relative to the metro over "
+            f"the next year, trained on every US metro. Over {int(gbm['n_folds'])} test years it "
+            "never saw, the Spearman rank correlation between its ranking and what the ZIPs then "
+            "did was "
+            f"{gbm['spearman_nyc_mean']:+.2f}, worst year {gbm['spearman_nyc_min']:+.2f}. "
+            'The one-line rule "last year\'s growth relative to the metro continues" scores '
+            f"{mom['spearman_nyc_mean']:+.2f}. The model beat that rule in "
+            f"{int(gbm['folds_gbm_beats_best_baseline'])} of {int(gbm['folds_compared'])} years, "
+            f"by {gbm['gap_vs_best_baseline']:+.2f} on average, 90% interval "
+            f"{_interval(gbm['gap_ci_low'], gbm['gap_ci_high'])}: real, but small. In price terms, "
+            f"the model's top fifth of ZIPs beat its bottom fifth by "
+            f"{100 * gbm['q5_q1_spread_nyc_mean']:.1f} percentage points of growth against the "
+            f"metro over the next year; the rule's top fifth beat its bottom fifth by "
+            f"{100 * mom['q5_q1_spread_nyc_mean']:.1f}.",
+            "",
+            "At five and ten years the model has no skill, and neither did anything else we tried. "
+            "Which end of the cheap-to-expensive axis wins flips every 6 to 8 years, and the data "
+            "holds two such cycles. The 5- and 10-year files in `output/` are lists of the "
+            "cheapest ZIPs, not forecasts.",
+            "",
+        ]
+    parts += [
+        f"Zillow data through {origin}; {len(ranking)} NYC-metro ZIPs ranked. Full tables are in "
+        "[output/REPORT.md](output/REPORT.md), method and caveats in the [README](README.md). "
+        "Regenerate with `zipforecast evaluate` or `zipforecast rank`.",
+        "",
+        f"## The {n} best and {n} worst ranked NYC-metro ZIPs for the next 12 months",
+        "",
+        "Score is the model's expected percentile of price growth within the NYC metro, 0 to 100. "
+        "The next column is the median of what NYC ZIPs in the same 5-point score band did over "
+        "the following year in past origins, relative to the metro: a historical analogue, not "
+        "a forecast of this year's metro. Zillow's 12-month forecast is an absolute number, so "
+        "the two columns are not comparable.",
+        "",
+        f"The top {n} are {_list_shape(top)}. The bottom {n} are {_list_shape(bottom)}. "
+        "Read the list for what it is: mostly last year's relative growth, adjusted by how fast "
+        "listings are moving.",
+        "",
+        f"### Top {n}",
+        "",
+        *header,
+        *_zip_rows(top),
+        "",
+        f"### Bottom {n}",
+        "",
+        *header,
+        *_zip_rows(bottom),
+        "",
+        f"A rank correlation of {correlation} leaves room for a fair share of the top {n} to trail "
+        f"the metro next year and a fair share of the bottom {n} to beat it. This is a shortlist "
+        "of where to look, not a reason to buy or sell in any one ZIP.",
+        "",
+    ]
+    RESULTS_FILE.write_text("\n".join(parts))
+    log.info("wrote %s", RESULTS_FILE)
+
+
 def _remove_stale_horizon_files(horizons: set[int]) -> None:
     """Drop per-horizon files from earlier runs so output/ describes one evaluation."""
     for h in set(config.HORIZONS) - horizons:
@@ -354,6 +454,8 @@ def write_report(
     for h, rk in rankings.items():
         rk.to_csv(config.OUTPUT_DIR / f"nyc_ranking_{h}y.csv", index=False)
         write_ranking_json(rk, h, summary)
+    if 1 in rankings:
+        write_results_summary(rankings[1], summary)
 
     latest = panel["origin"].max().date()
     first = panel["origin"].min().date()

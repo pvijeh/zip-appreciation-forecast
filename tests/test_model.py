@@ -3,7 +3,7 @@ import json
 import numpy as np
 import pandas as pd
 
-from zipforecast import config
+from zipforecast import config, report
 from zipforecast.model import (
     BASELINES,
     FEATURE_GROUPS,
@@ -16,7 +16,7 @@ from zipforecast.model import (
     summarize,
     walk_forward_folds,
 )
-from zipforecast.report import write_ranking_json
+from zipforecast.report import write_ranking_json, write_results_summary
 
 
 def test_spearman_needs_twenty_pairs_and_ignores_nan():
@@ -117,6 +117,54 @@ def test_ranking_json_is_ranked_and_nan_safe(monkeypatch, tmp_path):
     assert [z["rank"] for z in doc["zips"]] == [1, 2]
     assert doc["zips"][1]["historical_growth_vs_metro_pct"] is None
     assert doc["zips"][1]["price_vs_metro_median_pct"] == -10.0
+
+
+def test_results_summary_lists_top_and_bottom_and_survives_missing_skill(monkeypatch, tmp_path):
+    monkeypatch.setattr(report, "RESULTS_FILE", tmp_path / "RESULTS.md")
+    n = 40
+    ranking = pd.DataFrame(
+        {
+            "rank": range(1, n + 1),
+            "zip": [f"{10000 + i:05d}" for i in range(n)],
+            "city": ["Town"] * n,
+            "county": ["Kings County"] * n,
+            "state": ["NY"] * n,
+            "zhvi": np.linspace(2e6, 3e5, n),
+            "score": np.linspace(80, 20, n),
+            "hist_relative_pct": np.linspace(4, -4, n),
+            "zillow_1y_forecast_pct": [np.nan] + [1.0] * (n - 1),
+            "log_price_rel_metro": np.linspace(0.5, -0.5, n),
+            "mom_1y_rel": np.linspace(0.05, -0.05, n),
+            "origin": [pd.Timestamp("2026-07-31").date()] * n,
+        }
+    )
+    write_results_summary(ranking, None)
+    text = (tmp_path / "RESULTS.md").read_text()
+    assert "Is the model any good?" not in text
+    assert "| 1 | 10000 |" in text and "| 40 | 10039 |" in text
+    assert "| 16 | 10015 |" not in text and "| 25 | 10024 |" not in text
+    assert "| n/a |" in text
+
+    summary = pd.DataFrame(
+        {
+            "horizon": [1, 1],
+            "model": ["gbm_national", "momentum_1y"],
+            "spearman_nyc_mean": [0.44, 0.39],
+            "spearman_nyc_min": [-0.03, -0.02],
+            "q5_q1_spread_nyc_mean": [0.056, 0.050],
+            "n_folds": [16, 16],
+            "folds_gbm_beats_best_baseline": [11.0, np.nan],
+            "folds_compared": [16.0, np.nan],
+            "gap_vs_best_baseline": [0.049, np.nan],
+            "gap_ci_low": [0.008, np.nan],
+            "gap_ci_high": [0.088, np.nan],
+        }
+    )
+    write_results_summary(ranking, summary)
+    text = (tmp_path / "RESULTS.md").read_text()
+    assert "+0.44, worst year -0.03" in text
+    assert "11 of 16 years" in text
+    assert "+0.01 to +0.09" in text
 
 
 def _results(rows):

@@ -432,6 +432,7 @@ RANKING_CONTEXT = [
     "county",
     "state",
     "zhvi",
+    "mom_1y_rel",
     "mom_5y_rel",
     "log_price_rel_metro",
     "nbr_log_price_gap",
